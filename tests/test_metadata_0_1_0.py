@@ -49,7 +49,7 @@ def test_tasks():
     ]
 
 
-def episodes():
+def test_episodes():
     meta = Metadata(METADATA_PATH)
     assert meta.episodes == [
         {"id": "0", "success": False, "task_index": 0},
@@ -57,7 +57,7 @@ def episodes():
     ]
 
 
-def num_episodes():
+def test_num_episodes():
     meta = Metadata(METADATA_PATH)
     assert meta.num_episodes == 2
 
@@ -81,8 +81,8 @@ def test_perceptions():
     assert set(perceptions.cameras) == {
         "ceiling",
         "head",
-        "left_wrist",
-        "right_wrist",
+        "wrist_left",
+        "wrist_right",
     }
 
 

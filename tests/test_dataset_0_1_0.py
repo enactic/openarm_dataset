@@ -114,8 +114,8 @@ def test_camera_names():
     assert set(dataset.camera_names) == {
         "ceiling",
         "head",
-        "left_wrist",
-        "right_wrist",
+        "wrist_left",
+        "wrist_right",
     }
 
 
@@ -125,8 +125,8 @@ def test_load_cameras():
     assert set(cameras) == {
         "ceiling",
         "head",
-        "left_wrist",
-        "right_wrist",
+        "wrist_left",
+        "wrist_right",
     }
     assert cameras["ceiling"].num_frames == 3
 
@@ -142,19 +142,19 @@ def test_camera_filter():
         DATASET_DIR,
         camera_names=[
             "head",
-            "left_wrist",
-            "right_wrist",
+            "wrist_left",
+            "wrist_right",
         ],
     )
     assert set(dataset.camera_names) == {
         "head",
-        "left_wrist",
-        "right_wrist",
+        "wrist_left",
+        "wrist_right",
     }
     assert set(dataset.load_cameras(0)) == {
         "head",
-        "left_wrist",
-        "right_wrist",
+        "wrist_left",
+        "wrist_right",
     }
 
 
@@ -177,8 +177,8 @@ def test_sample():
     assert set(samples[0].cameras) == {
         "ceiling",
         "head",
-        "left_wrist",
-        "right_wrist",
+        "wrist_left",
+        "wrist_right",
     }
     cameras_dir = DATASET_DIR / "episodes" / "0" / "cameras"
     assert samples[0].cameras["ceiling"].path == (
@@ -187,9 +187,9 @@ def test_sample():
     assert samples[0].cameras["head"].path == (
         cameras_dir / "head" / "1772010251629774985.jpeg"
     )
-    assert samples[0].cameras["left_wrist"].path == (
-        cameras_dir / "left_wrist" / "1772010251620214727.jpeg"
+    assert samples[0].cameras["wrist_left"].path == (
+        cameras_dir / "wrist_left" / "1772010251620214727.jpeg"
     )
-    assert samples[0].cameras["right_wrist"].path == (
-        cameras_dir / "right_wrist" / "1772010251628789283.jpeg"
+    assert samples[0].cameras["wrist_right"].path == (
+        cameras_dir / "wrist_right" / "1772010251628789283.jpeg"
     )

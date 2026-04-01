@@ -149,8 +149,8 @@ class Dataset:
             {
                 "ceiling": Camera,
                 "head": Camera,
-                "left_wrist": Camera,
-                "right_wrist": Camera,
+                "wrist_right": Camera,
+                "wrist_left": Camera,
             }
 
         """
@@ -208,8 +208,8 @@ class Dataset:
             {
                 "ceiling": Frame,
                 "head": Frame,
-                "left_wrist": Frame,
-                "right_wrist": Frame,
+                "wrist_right": Frame,
+                "wrist_left": Frame,
             }
 
         """
@@ -255,11 +255,16 @@ class Dataset:
         cutoff: float = None,
     ) -> pd.DataFrame:
         df = pd.read_parquet(path)
+        # No version and 0.1.0 use "positions"
+        if "positions" in df:
+            column_name = "positions"
+        else:
+            column_name = "value"
         df[list(embodiment.joints)] = pd.DataFrame(
-            df["positions"].tolist(),
+            df[column_name].tolist(),
             index=df.index,
         )
-        df = df.drop(columns=["positions"])
+        df = df.drop(columns=[column_name])
         if use_unixtime:
             df["timestamp"] = df["timestamp"].astype("int64") / 1e9
         df = df.set_index("timestamp")

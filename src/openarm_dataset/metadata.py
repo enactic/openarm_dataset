@@ -71,36 +71,41 @@ class Metadata:
         """Get equipment."""
         return Equipment(self.data["equipment"])
 
+    @property
+    def frequencies(self) -> Frequencies:
+        """Get frequencies."""
+        return Frequencies(self.data.get("frequencies", {}))
+
 
 class Equipment:
-    """Metadata for Equipment."""
+    """Metadata for equipment."""
 
-    def __init__(self, config: dict):
+    def __init__(self, data: dict):
         """Initialize Equipment."""
-        self.config = config
-        self.embodiments = Embodiments(self.config["embodiments"])
-        self.perceptions = Perceptions(self.config["perceptions"])
+        self._data = data
+        self.embodiments = Embodiments(self._data["embodiments"])
+        self.perceptions = Perceptions(self._data["perceptions"])
 
     @property
     def id(self) -> str:
         """Get id."""
-        return self.config["id"]
+        return self._data["id"]
 
     @property
     def version(self) -> str:
         """Get version."""
-        return self.config["version"]
+        return self._data["version"]
 
 
 class Embodiments(Mapping):
-    """Metadata for Embodiments."""
+    """Metadata for embodiments."""
 
-    def __init__(self, config: dict):
+    def __init__(self, data: dict):
         """Initialize Embodiments."""
-        self.config = config
+        self._data = data
         self.embodiments = {
-            name: self._build_embodiment(name, embodiment_config)
-            for name, embodiment_config in self.config.items()
+            name: self._build_embodiment(name, embodiment_data)
+            for name, embodiment_data in self._data.items()
         }
 
     def __getitem__(self, key):
@@ -115,35 +120,35 @@ class Embodiments(Mapping):
         """Return number of Embodiments."""
         return len(self.embodiments)
 
-    def _build_embodiment(self, name: str, config: dict) -> Embodiment:
-        id_ = config["id"]
+    def _build_embodiment(self, name: str, data: dict) -> Embodiment:
+        id_ = data["id"]
         if id_ == "OpenArm":
-            return OpenArm(name, config)
+            return OpenArm(name, data)
         elif id_ == "Ball Screw Lifter":
-            return BallScrewLifter(name, config)
+            return BallScrewLifter(name, data)
         else:
             raise ValueError(f"Invalid embodiment id: {id_}")
 
 
 class Perceptions:
-    """Metadata for Perceptions."""
+    """Metadata for perceptions."""
 
-    def __init__(self, config: dict):
+    def __init__(self, data: dict):
         """Initialize Perceptions."""
-        self.config = config
+        self._data = data
         self.cameras = {
-            name: Camera(name, config)
-            for name, config in self.config["cameras"].items()
+            name: Camera(name, camera_data)
+            for name, camera_data in self._data["cameras"].items()
         }
 
 
 class Embodiment:
-    """Metadata for Embodiment."""
+    """Metadata for embodiment."""
 
-    def __init__(self, name: str, config: dict):
+    def __init__(self, name: str, data: dict):
         """Initialize Embodiment."""
         self.name = name
-        self.config = config
+        self._data = data
         self.components: tuple[str, ...] = ()
         self.attributes: tuple[str, ...] = ()
         self.joints: tuple[str, ...] = ()
@@ -151,20 +156,20 @@ class Embodiment:
     @property
     def id(self) -> str:
         """Get id."""
-        return self.config["id"]
+        return self._data["id"]
 
     @property
     def version(self) -> str:
         """Get version."""
-        return self.config["version"]
+        return self._data["version"]
 
 
 class OpenArm(Embodiment):
-    """Metadata for OpenArm as Embodiment."""
+    """Metadata for OpenArm as embodiment."""
 
-    def __init__(self, name: str, config: dict):
+    def __init__(self, name: str, data: dict):
         """Initialize OpenArm."""
-        super().__init__(name, config)
+        super().__init__(name, data)
         self.components = ("right", "left")
         self.attributes = ("qpos",)
         self.joints = (
@@ -180,19 +185,30 @@ class OpenArm(Embodiment):
 
 
 class BallScrewLifter(Embodiment):
-    """Metadata for BallScrewLifter as Embodiment."""
+    """Metadata for ball screw lifter as embodiment."""
 
-    def __init__(self, name: str, config: dict):
+    def __init__(self, name: str, data: dict):
         """Initialize BallScrewLifter."""
-        super().__init__(name, config)
+        super().__init__(name, data)
         self.attributes = ("qpos",)
         self.joints = ("position",)
 
 
 class Camera:
-    """Metadata for Camera."""
+    """Metadata for camera."""
 
-    def __init__(self, name: str, config: dict):
+    def __init__(self, name: str, data: dict):
         """Initialize Camera."""
         self.name = name
-        self.config = config
+        self._data = data
+
+
+class Frequencies:
+    """Metadata for frequencies."""
+
+    def __init__(self, data: dict):
+        """Initialize Frequencies."""
+        self._data = data
+        self.action = self._data.get("action", {})
+        self.cameras = self._data.get("cameras", {})
+        self.obs = self._data.get("obs", {})
