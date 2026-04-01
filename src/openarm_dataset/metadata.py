@@ -42,6 +42,11 @@ class Metadata:
         return self.data.get("operator")
 
     @property
+    def operation_type(self) -> str:
+        """Get operation type."""
+        return self.data.get("operation_type", "teleop")
+
+    @property
     def location(self) -> str:
         """Get location."""
         return self.data.get("location")

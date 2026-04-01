@@ -29,6 +29,11 @@ def test_operator():
     assert meta.operator == "Tester"
 
 
+def test_operation_type():
+    meta = Metadata(METADATA_PATH)
+    assert meta.operation_type == "teleop"
+
+
 def test_location():
     meta = Metadata(METADATA_PATH)
     assert meta.location == "Test"

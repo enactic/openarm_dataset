@@ -1,6 +1,7 @@
 version: "0.1.0"
 location: Test
 operator: Tester
+operation_type: teleop
 tasks:
   - prompt: Run test.
     description: Longer task description if need.
