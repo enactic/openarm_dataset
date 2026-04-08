@@ -171,10 +171,15 @@ class Dataset:
         """
         if name not in self.camera_names:
             raise KeyError(f"Camera {name} not found. Available: {self.camera_names}")
-        return Camera(
-            name,
-            self._episode_path(episode_index) / "cameras" / name,
-        )
+        base_path = self._episode_path(episode_index)
+        # Unversioned dataset. This is for backward compatibility.
+        if self.meta.version is None:
+            path = base_path / f"{name}_image"
+            if not path.exists() and name.endswith("_wrist"):
+                path = base_path / f"{name.removesuffix('_wrist')}_image"
+        else:
+            path = base_path / "cameras" / name
+        return Camera(name, path)
 
     def sample(
         self,
@@ -225,14 +230,25 @@ class Dataset:
     ) -> dict[str, pd.DataFrame]:
         data = {}
         for name, embodiment in self.meta.equipment.embodiments.items():
-            base_path = self._episode_path(episode_index) / obs_or_action / name
+            # Unversioned dataset.
+            # This is for backward compatibility.
+            if self.meta.version is None:
+                base_path = self._episode_path(episode_index) / obs_or_action
+            else:
+                base_path = self._episode_path(episode_index) / obs_or_action / name
             if embodiment.components:
                 for component in embodiment.components:
                     for attribute in embodiment.attributes:
                         key = f"{name}/{component}/{attribute}"
+                        # Unversioned dataset.
+                        # This is for backward compatibility.
+                        if self.meta.version is None:
+                            path = base_path / f"{component}_arm" / f"{attribute}.parquet"
+                        else:
+                            path = base_path / component / f"{attribute}.parquet"
                         data[key] = self._load_embodiment_data(
                             embodiment,
-                            base_path / component / f"{attribute}.parquet",
+                            path,
                             use_unixtime=use_unixtime,
                             cutoff=cutoff,
                         )

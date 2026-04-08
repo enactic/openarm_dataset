@@ -16,7 +16,9 @@
 
 from __future__ import annotations
 from collections.abc import Mapping
+import copy
 import os
+import json
 import yaml
 
 
@@ -26,13 +28,22 @@ class Metadata:
     def __init__(self, path: str | os.PathLike):
         """Initialize Metadata."""
         self.data = self._load_yaml(path)
+        # Unversioned dataset. This is for backward compatibility.
+        if "meta" in self.data:
+            self.data = self.data["meta"]
+            episodes_path = os.path.join(os.path.dirname(path), "episodes.jsonl")
+            episodes = []
+            with open(episodes_path) as f:
+                for line in f:
+                    episodes.append(json.loads(line))
+            self.data["episodes"] = episodes
 
     def _load_yaml(self, path: str | os.PathLike) -> dict:
         with open(path) as f:
             return yaml.safe_load(f)
 
     @property
-    def version(self) -> str:
+    def version(self) -> str | None:
         """Get version."""
         return self.data.get("version")
 
@@ -69,12 +80,38 @@ class Metadata:
     @property
     def equipment(self) -> Equipment:
         """Get equipment."""
-        return Equipment(self.data["equipment"])
+        # Unversioned dataset. This is for backward compatibility.
+        if self.version is None:
+            return Equipment(self._convert_unversioned_equipment())
+        else:
+            return Equipment(self.data["equipment"])
 
     @property
     def frequencies(self) -> Frequencies:
         """Get frequencies."""
         return Frequencies(self.data.get("frequencies", {}))
+
+    def _convert_unversioned_equipment(self):
+        equipment = copy.deepcopy(self.data["equipment"])
+        equipment["id"] = equipment.pop("equipment_id")
+        equipment["version"] = equipment.pop("equipment_version")
+        openarm_version = equipment["leader"]["arms"]["right_arm"]["hardware_version"]
+        equipment["embodiments"] = {
+            "arms": {
+                "id": "OpenArm",
+                "version": openarm_version,
+            },
+        }
+        del equipment["leader"]
+        del equipment["follower"]
+        cameras = {}
+        for camera_name in equipment.pop("cameras"):
+            cameras[camera_name.removeprefix("cam_")] = {}
+        equipment["perceptions"] = {
+            "cameras": cameras,
+        }
+        del equipment["sensors"]
+        return equipment
 
 
 class Equipment:
