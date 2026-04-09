@@ -14,8 +14,9 @@
 
 """OpenArm Dataset."""
 
-from pathlib import Path
 import os
+from pathlib import Path
+import shutil
 
 import pandas as pd
 import scipy.signal as signal
@@ -98,7 +99,7 @@ class Dataset:
             }
 
         """
-        return self._load_obs_or_action(
+        return self._load_embodiment_values(
             "obs",
             episode_index,
             use_unixtime,
@@ -129,7 +130,7 @@ class Dataset:
             }
 
         """
-        return self._load_obs_or_action(
+        return self._load_embodiment_values(
             "action",
             episode_index,
             use_unixtime=use_unixtime,
@@ -221,21 +222,15 @@ class Dataset:
         sampler = Sampler()
         return list(sampler.sample(self, episode_index, hz))
 
-    def _load_obs_or_action(
-        self,
-        obs_or_action: str,
-        episode_index: int,
-        use_unixtime: bool = False,
-        cutoff: float = None,
-    ) -> dict[str, pd.DataFrame]:
-        data = {}
+    def _get_embodiment_attributes(self, type_: str, episode_index: int):
+        attributes = []
         for name, embodiment in self.meta.equipment.embodiments.items():
             # Unversioned dataset.
             # This is for backward compatibility.
             if self.meta.version is None:
-                base_path = self._episode_path(episode_index) / obs_or_action
+                base_path = self._episode_path(episode_index) / type_
             else:
-                base_path = self._episode_path(episode_index) / obs_or_action / name
+                base_path = self._episode_path(episode_index) / type_ / name
             if embodiment.components:
                 for component in embodiment.components:
                     for attribute in embodiment.attributes:
@@ -243,27 +238,52 @@ class Dataset:
                         # Unversioned dataset.
                         # This is for backward compatibility.
                         if self.meta.version is None:
-                            path = base_path / f"{component}_arm" / f"{attribute}.parquet"
+                            path = (
+                                base_path / f"{component}_arm" / f"{attribute}.parquet"
+                            )
                         else:
                             path = base_path / component / f"{attribute}.parquet"
-                        data[key] = self._load_embodiment_data(
-                            embodiment,
-                            path,
-                            use_unixtime=use_unixtime,
-                            cutoff=cutoff,
+                        attributes.append(
+                            {
+                                "key": key,
+                                "embodiment": embodiment,
+                                "component": component,
+                                "name": attribute,
+                                "path": path,
+                            }
                         )
             else:
                 for attribute in embodiment.attributes:
                     key = f"{name}/{attribute}"
-                    data[key] = self._load_embodiment_data(
-                        embodiment,
-                        base_path / f"{attribute}.parquet",
-                        use_unixtime=use_unixtime,
-                        cutoff=cutoff,
+                    attributes.append(
+                        {
+                            "key": key,
+                            "embodiment": embodiment,
+                            "component": None,
+                            "name": attribute,
+                            "path": base_path / f"{attribute}.parquet",
+                        }
                     )
-        return data
+        return attributes
 
-    def _load_embodiment_data(
+    def _load_embodiment_values(
+        self,
+        type_: str,
+        episode_index: int,
+        use_unixtime: bool = False,
+        cutoff: float = None,
+    ) -> dict[str, pd.DataFrame]:
+        values = {}
+        for attribute in self._get_embodiment_attributes(type_, episode_index):
+            values[attribute["key"]] = self._load_embodiment_value(
+                attribute["embodiment"],
+                attribute["path"],
+                use_unixtime=use_unixtime,
+                cutoff=cutoff,
+            )
+        return values
+
+    def _load_embodiment_value(
         self,
         embodiment: Embodiment,
         path: str | os.PathLike,
@@ -306,3 +326,56 @@ class Dataset:
 
         filtered_values = signal.filtfilt(b, a, df.values, axis=0)
         return pd.DataFrame(filtered_values, index=df.index, columns=df.columns)
+
+    def write(self, output: str | os.PathLike):
+        """Write this dataset as the latest OpenArm dataset format."""
+        output = Path(output)
+        self.meta.write(output)
+        self._write_data(output)
+
+    def _write_data(self, output: Path):
+        for i, episode in enumerate(self.meta.episodes):
+            self._write_episode(output, i)
+
+    def _write_episode(self, output: Path, episode_index: int):
+        self._write_embodiment_data(output, episode_index)
+        self._write_camera_data(output, episode_index)
+
+    def _write_embodiment_data(self, output: Path, episode_index: int):
+        for type_ in ["action", "obs"]:
+            for attribute in self._get_embodiment_attributes(type_, episode_index):
+                embodiment = attribute["embodiment"]
+                component = attribute["component"]
+                name = attribute["name"]
+                base_path = (
+                    output
+                    / "episodes"
+                    / self._episode_id(episode_index)
+                    / type_
+                    / embodiment.name
+                )
+                if component:
+                    new_path = base_path / component / f"{name}.parquet"
+                else:
+                    new_path = base_path / f"{name}.parquet"
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                df = pd.read_parquet(attribute["path"])
+                # No version and 0.1.0 use "positions"
+                if "positions" in df:
+                    df["value"] = df["positions"]
+                    df = df.drop(columns=["positions"])
+                    df.to_parquet(new_path)
+                else:
+                    shutil.copy2(attribute["path"], new_path)
+
+    def _write_camera_data(self, output: os.PathLike, episode_index: int):
+        base_path = output / "episodes" / self._episode_id(episode_index)
+        for name, camera in self.load_cameras(episode_index).items():
+            if self.meta.version is None:
+                if name == "left_wrist":
+                    name = "wrist_left"
+                elif name == "right_wrist":
+                    name = "wrist_right"
+            new_path = base_path / "cameras" / name
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(camera.base_path, new_path)

@@ -71,9 +71,9 @@ meta:
             - openarm_left_joint6
             - openarm_left_joint7
             - openarm_left_gripper
-    cameras:
-      cam_left_wrist: {}
-      cam_right_wrist: {}
-      cam_ceiling: {}
-      cam_head: {}
-    sensors: {}
+      cameras:
+        cam_left_wrist: {}
+        cam_right_wrist: {}
+        cam_ceiling: {}
+        cam_head: {}
+      sensors: {}

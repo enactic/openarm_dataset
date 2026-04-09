@@ -16,7 +16,9 @@ from pathlib import Path
 
 from openarm_dataset.metadata import Metadata
 
-METADATA_PATH = Path(__file__).parent / "fixture" / "dataset_unversioned" / "metadata.yaml"
+METADATA_PATH = (
+    Path(__file__).parent / "fixture" / "dataset_unversioned" / "metadata.yaml"
+)
 
 
 def test_version():

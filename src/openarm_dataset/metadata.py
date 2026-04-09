@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 import copy
 import os
+import pathlib
 import json
 import yaml
 
@@ -102,16 +103,33 @@ class Metadata:
                 "version": openarm_version,
             },
         }
-        del equipment["leader"]
-        del equipment["follower"]
         cameras = {}
-        for camera_name in equipment.pop("cameras"):
+        for camera_name in equipment["follower"]["cameras"]:
             cameras[camera_name.removeprefix("cam_")] = {}
         equipment["perceptions"] = {
             "cameras": cameras,
         }
-        del equipment["sensors"]
+        del equipment["leader"]
+        del equipment["follower"]
         return equipment
+
+    def write(self, output: str | os.PathLike):
+        """Write this metadata as the latest OpenArm dataset format."""
+        output = pathlib.Path(output)
+        data = copy.deepcopy(self.data)
+        latest_version = "0.2.0"
+        data["version"] = latest_version
+        if self.version is None:
+            data["equipment"] = self._convert_unversioned_equipment()
+        if self.version is None or self.version == "0.1.0":
+            cameras = data["equipment"]["perceptions"]["cameras"]
+            if "left_wrist" in cameras:
+                cameras["wrist_left"] = cameras.pop("left_wrist")
+            if "right_wrist" in cameras:
+                cameras["wrist_right"] = cameras.pop("right_wrist")
+        output.mkdir(parents=True, exist_ok=True)
+        with open(output / "metadata.yaml", "w") as f:
+            yaml.safe_dump(data, f)
 
 
 class Equipment:
