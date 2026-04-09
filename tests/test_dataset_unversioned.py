@@ -20,13 +20,16 @@ from openarm_dataset.dataset import Dataset
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_unversioned"
 
 
-def test_num_episodes():
-    dataset = Dataset(DATASET_DIR)
+@pytest.fixture
+def dataset():
+    return Dataset(DATASET_DIR)
+
+
+def test_num_episodes(dataset):
     assert dataset.num_episodes == 2
 
 
-def test_load_obs():
-    dataset = Dataset(DATASET_DIR)
+def test_load_obs(dataset):
     obs = dataset.load_obs(0)
     assert set(obs) == {
         "arms/left/qpos",
@@ -58,8 +61,7 @@ def test_load_obs():
     ]
 
 
-def test_load_all_obs():
-    dataset = Dataset(DATASET_DIR)
+def test_load_all_obs(dataset):
     obs_list = [dataset.load_obs(i) for i in range(dataset.num_episodes)]
     assert len(obs_list) == dataset.num_episodes
     for obs in obs_list:
@@ -67,8 +69,7 @@ def test_load_all_obs():
         assert not obs["arms/right/qpos"].empty
 
 
-def test_load_action():
-    dataset = Dataset(DATASET_DIR)
+def test_load_action(dataset):
     action = dataset.load_action(0)
     assert set(action) == {
         "arms/left/qpos",
@@ -100,8 +101,7 @@ def test_load_action():
     ]
 
 
-def test_load_all_action():
-    dataset = Dataset(DATASET_DIR)
+def test_load_all_action(dataset):
     action_list = [dataset.load_action(i) for i in range(dataset.num_episodes)]
     assert len(action_list) == dataset.num_episodes
     for action in action_list:
@@ -109,8 +109,7 @@ def test_load_all_action():
         assert not action["arms/right/qpos"].empty
 
 
-def test_camera_names():
-    dataset = Dataset(DATASET_DIR)
+def test_camera_names(dataset):
     assert set(dataset.camera_names) == {
         "ceiling",
         "head",
@@ -119,8 +118,7 @@ def test_camera_names():
     }
 
 
-def test_load_cameras():
-    dataset = Dataset(DATASET_DIR)
+def test_load_cameras(dataset):
     cameras = dataset.load_cameras(0)
     assert set(cameras) == {
         "ceiling",
@@ -131,15 +129,14 @@ def test_load_cameras():
     assert cameras["ceiling"].num_frames == 3
 
 
-def test_load_camera():
-    dataset = Dataset(DATASET_DIR)
+def test_load_camera(dataset):
     camera_data = dataset.load_camera("ceiling", 0)
     assert camera_data.num_frames == 3
 
 
-def test_camera_filter():
+def test_camera_filter(dataset):
     dataset = Dataset(
-        DATASET_DIR,
+        dataset.root_path,
         camera_names=[
             "head",
             "left_wrist",
@@ -158,8 +155,7 @@ def test_camera_filter():
     }
 
 
-def test_sample():
-    dataset = Dataset(DATASET_DIR)
+def test_sample(dataset):
     samples = dataset.sample(hz=30, episode_index=0)
     assert len(samples) > 1
     interval = samples[1].timestamp - samples[0].timestamp
@@ -180,7 +176,7 @@ def test_sample():
         "left_wrist",
         "right_wrist",
     }
-    episode_dir = DATASET_DIR / "episodes" / "0"
+    episode_dir = dataset.root_path / "episodes" / "0"
     assert samples[0].cameras["ceiling"].path == (
         episode_dir / "ceiling_image" / "1772010251629083055.jpeg"
     )

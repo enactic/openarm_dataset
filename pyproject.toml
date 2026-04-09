@@ -38,6 +38,9 @@ Changelog = "https://github.com/enactic/openarm_dataset/releases"
 Issues = "https://github.com/enactic/openarm_dataset/issues"
 Repository = "https://github.com/enactic/openarm_dataset.git"
 
+[project.scripts]
+openarm-dataset-convert = "openarm_dataset.convert:main"
+
 [dependency-groups]
 dev = [
     "pytest",

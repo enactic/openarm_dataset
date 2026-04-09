@@ -21,8 +21,11 @@ DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.1.0"
 
 
 @pytest.fixture
-def dataset():
-    return Dataset(DATASET_DIR)
+def dataset(tmp_path):
+    old_dataset = Dataset(DATASET_DIR)
+    new_dataset_dir = tmp_path / "dataset"
+    old_dataset.write(new_dataset_dir)
+    return Dataset(new_dataset_dir)
 
 
 def test_num_episodes(dataset):
