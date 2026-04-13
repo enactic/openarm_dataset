@@ -27,14 +27,14 @@ DATASET_PATH = Path(__file__).parent / "fixture" / "dataset_0.2.0"
 def rrd_setup(tmp_path):
     dataset = Dataset(DATASET_PATH)
     rrd_path = tmp_path / "output.rrd"
-    dataset.to_rrd(rrd_path)
+    dataset.write(rrd_path, "rrd")
     return dataset, rerun.recording.load_recording(str(rrd_path))
 
 
 def test_to_rrd_creates_file(tmp_path):
     dataset = Dataset(DATASET_PATH)
     rrd_path = tmp_path / "output.rrd"
-    dataset.to_rrd(rrd_path)
+    dataset.write(rrd_path, "rrd")
     assert rrd_path.exists()
 
 
@@ -45,7 +45,7 @@ def test_to_rrd_entities(rrd_setup):
     expected = set()
     for ep_idx in range(dataset.num_episodes):
         ep_id = dataset.meta.episodes[ep_idx]["id"]
-        for name, embodiment in dataset.meta.equipment.embodiments.items():
+        for embodiment in dataset.meta.equipment.embodiments.values():
             for component in embodiment.components:
                 for joint in embodiment.joints:
                     expected.add(f"/ep{ep_id}/action/{component}/{joint}")

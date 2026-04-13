@@ -222,16 +222,6 @@ class Dataset:
         sampler = Sampler()
         return list(sampler.sample(self, episode_index, hz))
 
-    def to_rrd(
-        self,
-        output: str | os.PathLike,
-        application_id: str = "openarm_dataset",
-    ) -> Path:
-        """Convert OpenArm Dataset to rerun.io RRD file."""
-        from . import _rrd
-
-        return _rrd.to_rrd(self, output, application_id)
-
     def _get_embodiment_attributes(self, type_: str, episode_index: int):
         attributes = []
         for name, embodiment in self.meta.equipment.embodiments.items():
@@ -337,11 +327,27 @@ class Dataset:
         filtered_values = signal.filtfilt(b, a, df.values, axis=0)
         return pd.DataFrame(filtered_values, index=df.index, columns=df.columns)
 
-    def write(self, output: str | os.PathLike):
+    def _write(self, output: str | os.PathLike) -> Path:
         """Write this dataset as the latest OpenArm dataset format."""
         output = Path(output)
         self.meta.write(output)
         self._write_data(output)
+        return output
+
+    def write(
+        self,
+        output: str | os.PathLike,
+        format: str | None = None,
+        **options,
+    ) -> Path:
+        """Write dataset to a file."""
+        if format is None or format == "openarm":
+            return self._write(output)
+        elif format == "rrd":
+            from . import _rrd
+
+            return _rrd.to_rrd(self, output, **options)
+        raise ValueError(f"Unsupported format: {format!r}")
 
     def _write_data(self, output: Path):
         for i, episode in enumerate(self.meta.episodes):
