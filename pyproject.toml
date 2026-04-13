@@ -30,6 +30,7 @@ dependencies = [
     "pillow",
     "pyarrow",
     "pyyaml",
+    "rerun-sdk",
     "scipy",
 ]
 
