@@ -222,6 +222,16 @@ class Dataset:
         sampler = Sampler()
         return list(sampler.sample(self, episode_index, hz))
 
+    def to_rrd(
+        self,
+        output: str | os.PathLike,
+        application_id: str = "openarm_dataset",
+    ) -> Path:
+        """Convert OpenArm Dataset to rerun.io RRD file."""
+        from . import _rrd
+
+        return _rrd.to_rrd(self, output, application_id)
+
     def _get_embodiment_attributes(self, type_: str, episode_index: int):
         attributes = []
         for name, embodiment in self.meta.equipment.embodiments.items():
