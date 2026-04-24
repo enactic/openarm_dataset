@@ -146,7 +146,7 @@ def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
             f_list.write(f"file '{f_path.resolve()}'\n")
         f_list.flush()
         cmd = [
-            "ffmpeg",
+            ffmpeg_exe, # use the detected ffmpeg executable path
             "-y",
             "-nostdin",
             "-loglevel",
@@ -511,6 +511,12 @@ def to_lerobotv21(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
 ) -> None:
+    # Validate inputs
+    if not (0.0 <= train_split <= 1.0):
+        raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
+    if fps <= 0:
+        raise ValueError(f"fps must be a positive integer, got {fps}")
+
     # set smoothing cutoff
     dataset.set_smoothing(cutoff=smoothing_cutoff)
     # Create the output directories
