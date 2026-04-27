@@ -75,7 +75,7 @@ def collect_downsampled_data(dataset: Dataset, fps: int, obs_keys, act_keys):
             sampled_cameras,
         )
         records.append(record)
-    return record
+    return records
 
 
 def get_chunk_name(episode_id: int):
