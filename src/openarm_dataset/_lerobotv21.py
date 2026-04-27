@@ -141,12 +141,15 @@ def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
         raise RuntimeError(
             "FFmpeg is required for video encoding but was not found. Please install FFmpeg in your conda environment or ensure it is available in your system PATH."
         ) from e
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=True) as f_list:
-        for f_path in frames:
-            f_list.write(f"file '{f_path.resolve()}'\n")
-        f_list.flush()
+    list_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f_list:
+            list_path = f_list.name
+            for f_path in frames:
+                f_list.write(f"file '{f_path.resolve()}'\n")
+
         cmd = [
-            ffmpeg_exe, # use the detected ffmpeg executable path
+            ffmpeg_exe,  # use the detected ffmpeg executable path
             "-y",
             "-nostdin",
             "-loglevel",
@@ -159,7 +162,7 @@ def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
             "-r",
             str(fps),
             "-i",
-            f_list.name,
+            list_path,
             "-c:v",
             FFMPEG_CODEC,
             "-preset",
@@ -169,6 +172,9 @@ def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
             str(out_mp4),
         ]
         subprocess.run(cmd, check=True, capture_output=not verbose)
+    finally:
+        if list_path and os.path.exists(list_path):
+            os.unlink(list_path)
 
 
 def _describe_vector(X):
@@ -460,8 +466,9 @@ def write_metadata(dataset, record, output_dir, fps, train_split, JOINT_NAMES):
         "success": {"dtype": "int64", "shape": [1], "names": None},
         "last_frame_index": {"dtype": "int64", "shape": [1], "names": None},
     }
+    sample_record = dataset.sample(hz=fps, episode_index=0)[0]
     for cam in dataset.camera_names:
-        sample_image = dataset.sample(hz=fps, episode_index=0)[0].cameras[cam].load()
+        sample_image = sample_record.cameras[cam].load()
         h, w = sample_image.shape[:2]
         features[f"{get_imagename_from_key(cam)}"] = {
             "dtype": "video",
