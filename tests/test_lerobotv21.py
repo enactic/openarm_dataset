@@ -21,11 +21,10 @@ from openarm_dataset import Dataset
 from openarm_dataset._lerobotv21 import (
     _collect_keys_and_joint_names,
     _escape_concat_path,
-    has_valid_ffmpeg,
     collect_downsampled_data,
     write_metadata,
     write_parquet,
-    write_videos
+    write_videos,
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
@@ -136,9 +135,6 @@ def test_data(lerobotv21_setup):
     ), "Observation values in data file do not match the original dataset."
 
 
-@pytest.mark.skipif(
-    not has_valid_ffmpeg(), reason="ffmpeg is not available in the testing environment."
-)
 def test_video(lerobotv21_setup):
     dataset, lerobot_path, record, _ = lerobotv21_setup
     write_videos(dataset, record, lerobot_path, FPS)
