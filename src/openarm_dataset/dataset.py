@@ -338,7 +338,7 @@ class Dataset:
         if format is None or format == "openarm":
             return self._write(output)
         elif format == "lerobot_v2.1":
-            from ._lerobotv21 import to_lerobotv21
+            from ._lerobot_v21 import to_lerobotv21
 
             return to_lerobotv21(self, output, **options)
         else:

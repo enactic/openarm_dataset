@@ -310,7 +310,7 @@ def write_videos(dataset, record, output_dir, fps):
             encode_mp4(sampled_cameras[camera_key], fps, video_path)
 
 
-def write_metadata(dataset, record, output_dir, fps, train_split, JOINT_NAMES):
+def write_metadata(dataset, record, output_dir, fps, train_split, joint_names):
     METADATA_DIR = "meta"
     episodes_metadata = []
     episodes_stats = []
@@ -397,10 +397,10 @@ def write_metadata(dataset, record, output_dir, fps, train_split, JOINT_NAMES):
 
     # stats.json
     A_all = (
-        np.vstack(A_all) if A_all else np.empty((0, len(JOINT_NAMES)), dtype=np.float32)
+        np.vstack(A_all) if A_all else np.empty((0, len(joint_names)), dtype=np.float32)
     )
     O_all = (
-        np.vstack(O_all) if O_all else np.empty((0, len(JOINT_NAMES)), dtype=np.float32)
+        np.vstack(O_all) if O_all else np.empty((0, len(joint_names)), dtype=np.float32)
     )
     timestamp_all = (
         np.concatenate(timestamp_all)
@@ -454,13 +454,13 @@ def write_metadata(dataset, record, output_dir, fps, train_split, JOINT_NAMES):
     features = {
         "action": {
             "dtype": "float32",
-            "names": JOINT_NAMES,
-            "shape": [len(JOINT_NAMES)],
+            "names": joint_names,
+            "shape": [len(joint_names)],
         },
         "observation.state": {
             "dtype": "float32",
-            "names": JOINT_NAMES,
-            "shape": [len(JOINT_NAMES)],
+            "names": joint_names,
+            "shape": [len(joint_names)],
         },
         "timestamp": {"dtype": "float64", "shape": [1], "names": None},
         "frame_index": {"dtype": "int64", "shape": [1], "names": None},
@@ -542,7 +542,7 @@ def to_lerobotv21(
             f"{obs_joint_names} vs {action_joint_names}"
         )
 
-    JOINT_NAMES = obs_joint_names
+    joint_names = obs_joint_names
 
     # collect downsampled data for each episode
     record = collect_downsampled_data(dataset, fps, obs_keys, action_keys)
@@ -552,4 +552,4 @@ def to_lerobotv21(
     # save_videos for each episode (output_dir/videos)
     write_videos(dataset, record, output_dir, fps)
     # episodes metadata and stats
-    write_metadata(dataset, record, output_dir, fps, train_split, JOINT_NAMES)
+    write_metadata(dataset, record, output_dir, fps, train_split, joint_names)

@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from openarm_dataset import Dataset
-from openarm_dataset._lerobotv21 import (
+from openarm_dataset._lerobot_v21 import (
     _collect_keys_and_joint_names,
     _escape_concat_path,
     collect_downsampled_data,
@@ -151,6 +151,42 @@ def test_video(lerobotv21_setup):
         assert video_path.exists(), (
             f"Video file for camera {camera_name} does not exist."
         )
+
+
+def test_convert_dataset(lerobotv21_setup):
+    dataset, lerobot_path, record, _ = lerobotv21_setup
+    dataset.write(
+        lerobot_path, format="lerobot_v2.1", smoothing_cutoff=1.0, train_split=0.8
+    )
+    # Check metadata 
+    metadata_path = lerobot_path / "meta"
+    assert metadata_path.exists(), "Metadata directory does not exist."
+    info_json_path = metadata_path / "info.json"
+    assert info_json_path.exists(), "info.json file does not exist."
+    with open(info_json_path) as f:
+        info = json.load(f)
+    assert info["codebase_version"] == "v2.1", (
+        "Incorrect codebase version in info.json."
+        )
+    
+    # Check data files
+    data_path = lerobot_path / "data" / "chunk-000" / "episode_000000.parquet"
+    assert data_path.exists(), "Data file does not exist."
+
+    # Check video files
+    camera_names = dataset.camera_names
+    for camera_name in camera_names:
+        video_path = (
+            lerobot_path
+            / "videos"
+            / "chunk-000"
+            / f"observation.images.{camera_name}"
+            / "episode_000000.mp4"
+        )
+        assert video_path.exists(), (
+            f"Video file for camera {camera_name} does not exist."
+        )
+
 
 
 def test_escape_concat_path_handles_single_quotes(tmp_path):
