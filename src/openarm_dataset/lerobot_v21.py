@@ -343,7 +343,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         task_name = dataset.meta.data["tasks"][task_index]["prompt"]
         rec = {
             "episode_index": episode_index,
-            "task": [task_name],
+            "tasks": [task_name],
             "length": len(sampled_obs),
         }
         episodes_metadata.append(rec)
