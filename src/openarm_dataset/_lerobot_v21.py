@@ -47,15 +47,15 @@ def _collect_keys_and_joint_names(dataset: Dataset):
                     key = f"{name}/{component}/{attribute}"
                     keys.append(key)
                     joint_names.extend(_get_joint_names(component, embodiment.joints))
-        else: 
+        else:
             for attribute in embodiment.attributes:
                 key = f"{name}/{attribute}"
                 keys.append(key)
                 joint_names.extend(_get_joint_names(None, embodiment.joints))
-        return keys, joint_names
+    return keys, joint_names
 
 
-def _collect_downsampled_data(dataset: Dataset, fps: int, joint_keys): 
+def _collect_downsampled_data(dataset: Dataset, fps: int, joint_keys):
     records = []
     for episode_index in range(dataset.meta.num_episodes):
         samples = dataset.sample(hz=fps, episode_index=episode_index)
@@ -531,7 +531,7 @@ def to_lerobotv21(
     dataset.set_smoothing(cutoff=smoothing_cutoff)
     # Create the output directories
     output_dir = Path(output_dir)
-    
+
     # Collect joint keys and names
     joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
 
