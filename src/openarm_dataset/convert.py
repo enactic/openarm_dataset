@@ -39,7 +39,7 @@ def main():
     )
     parser.add_argument(
         "--fps",
-        help="Frames per second for the output dataset (default: 30) if the output format is openarm",
+        help="Frames per second for the output dataset (default: 30) if the output format is lerobot_v2.1",
         type=int,
         default=30,
     )
