@@ -18,45 +18,22 @@ import numpy as np
 import pandas as pd
 import pytest
 from openarm_dataset import Dataset
-from openarm_dataset._lerobot_v21 import (
-    _collect_keys_and_joint_names,
-    _escape_concat_path,
-    collect_downsampled_data,
-    write_metadata,
-    write_parquet,
-    write_videos,
-)
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
 DATASET_0_2_0_PATH = FIXTURE_DIR / "dataset_0.2.0"
 FPS = 30
-TRAIN_SPLIT = 0.8
 
 
 @pytest.fixture
-def lerobotv21_setup(tmp_path):
+def lerobot_v21_setup(tmp_path):
     dataset = Dataset(DATASET_0_2_0_PATH)
     dataset.set_smoothing(1.0)
-    obs_keys, obs_joint_names = _collect_keys_and_joint_names(dataset, "obs")
-    action_keys, action_joint_names = _collect_keys_and_joint_names(dataset, "action")
-    assert obs_keys == [
-        "arms/right/qpos",
-        "arms/left/qpos",
-    ], "Observation keys do not match expected keys."
-    assert action_keys == [
-        "arms/right/qpos",
-        "arms/left/qpos",
-    ], "Action keys do not match expected keys."
-
-    JOINT_NAMES = obs_joint_names  # ["arms/right/qpos", "arms/left/qpos"]
-    record = collect_downsampled_data(dataset, FPS, obs_keys, action_keys)
-    lerobot_path = Path(tmp_path)
-    return dataset, lerobot_path, record, JOINT_NAMES
+    dataset.write(tmp_path, format="lerobot_v2.1", fps=FPS, train_split=0.8)
+    return dataset, tmp_path
 
 
-def test_metadata(lerobotv21_setup):
-    dataset, lerobot_path, record, JOINT_NAMES = lerobotv21_setup
-    write_metadata(dataset, record, lerobot_path, FPS, TRAIN_SPLIT, JOINT_NAMES)
+def test_metadata(lerobot_v21_setup):
+    dataset, lerobot_path = lerobot_v21_setup
     metadata_path = lerobot_path / "meta"
     ## check info.json
     info_json_path = metadata_path / "info.json"
@@ -66,7 +43,6 @@ def test_metadata(lerobotv21_setup):
     assert info["codebase_version"] == "v2.1", (
         "Incorrect codebase version in info.json."
     )
-
     ## check tasks.jsonl
     tasks_jsonl_path = metadata_path / "tasks.jsonl"
     assert tasks_jsonl_path.exists(), "tasks.jsonl file does not exist."
@@ -75,7 +51,6 @@ def test_metadata(lerobotv21_setup):
     assert len(tasks) == len(dataset.meta.tasks), (
         "Number of tasks in tasks.jsonl does not match the original dataset."
     )
-
     ## episodes.jsonl
     episodes_jsonl_path = metadata_path / "episodes.jsonl"
     assert episodes_jsonl_path.exists(), "episodes.jsonl file does not exist."
@@ -84,7 +59,6 @@ def test_metadata(lerobotv21_setup):
     assert len(episodes) == dataset.meta.num_episodes, (
         "Number of episodes in episodes.jsonl does not match the original dataset."
     )
-
     ## episodes_stats.jsonl
     episodes_stats_jsonl_path = metadata_path / "episodes_stats.jsonl"
     assert episodes_stats_jsonl_path.exists(), (
@@ -97,10 +71,8 @@ def test_metadata(lerobotv21_setup):
     )
 
 
-def test_data(lerobotv21_setup):
-    dataset, lerobot_path, record, _ = lerobotv21_setup
-    write_parquet(dataset, record, lerobot_path, FPS)
-
+def test_data(lerobot_v21_setup):
+    dataset, lerobot_path = lerobot_v21_setup
     data_path = lerobot_path / "data" / "chunk-000" / "episode_000000.parquet"
     assert data_path.exists(), "Data file does not exist."
 
@@ -135,10 +107,8 @@ def test_data(lerobotv21_setup):
     ), "Observation values in data file do not match the original dataset."
 
 
-def test_video(lerobotv21_setup):
-    dataset, lerobot_path, record, _ = lerobotv21_setup
-    write_videos(dataset, record, lerobot_path, FPS)
-
+def test_video(lerobot_v21_setup):
+    dataset, lerobot_path = lerobot_v21_setup
     camera_names = dataset.camera_names
     for camera_name in camera_names:
         video_path = (
@@ -151,48 +121,3 @@ def test_video(lerobotv21_setup):
         assert video_path.exists(), (
             f"Video file for camera {camera_name} does not exist."
         )
-
-
-def test_convert_dataset(lerobotv21_setup):
-    dataset, lerobot_path, record, _ = lerobotv21_setup
-    dataset.write(
-        lerobot_path, format="lerobot_v2.1", smoothing_cutoff=1.0, train_split=0.8
-    )
-    # Check metadata 
-    metadata_path = lerobot_path / "meta"
-    assert metadata_path.exists(), "Metadata directory does not exist."
-    info_json_path = metadata_path / "info.json"
-    assert info_json_path.exists(), "info.json file does not exist."
-    with open(info_json_path) as f:
-        info = json.load(f)
-    assert info["codebase_version"] == "v2.1", (
-        "Incorrect codebase version in info.json."
-        )
-    
-    # Check data files
-    data_path = lerobot_path / "data" / "chunk-000" / "episode_000000.parquet"
-    assert data_path.exists(), "Data file does not exist."
-
-    # Check video files
-    camera_names = dataset.camera_names
-    for camera_name in camera_names:
-        video_path = (
-            lerobot_path
-            / "videos"
-            / "chunk-000"
-            / f"observation.images.{camera_name}"
-            / "episode_000000.mp4"
-        )
-        assert video_path.exists(), (
-            f"Video file for camera {camera_name} does not exist."
-        )
-
-
-
-def test_escape_concat_path_handles_single_quotes(tmp_path):
-    frame_path = tmp_path / "single'quote.jpeg"
-    frame_path.touch()
-
-    escaped_path = _escape_concat_path(frame_path)
-
-    assert escaped_path == str(frame_path.resolve()).replace("'", "'\\''")

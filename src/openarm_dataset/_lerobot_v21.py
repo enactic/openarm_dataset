@@ -51,7 +51,7 @@ def _collect_keys_and_joint_names(dataset: Dataset, mode: str):
     return keys, joint_names
 
 
-def collect_downsampled_data(dataset: Dataset, fps: int, obs_keys, act_keys):
+def _collect_downsampled_data(dataset: Dataset, fps: int, obs_keys, act_keys):
     records = []
     for episode_index in range(dataset.meta.num_episodes):
         samples = dataset.sample(hz=fps, episode_index=episode_index)
@@ -78,11 +78,11 @@ def collect_downsampled_data(dataset: Dataset, fps: int, obs_keys, act_keys):
     return records
 
 
-def get_chunk_name(episode_id: int):
+def _get_chunk_name(episode_id: int):
     return f"chunk-{episode_id // CHUNK_SIZE:03d}"
 
 
-def get_image_name_from_key(key: str):
+def _get_image_name_from_key(key: str):
     return f"observation.images.{key}"
 
 
@@ -117,7 +117,7 @@ def _is_valid_exe(exe: str) -> bool:
         return False
 
 
-def has_valid_ffmpeg() -> bool:
+def _has_valid_ffmpeg() -> bool:
     """Check if a valid ffmpeg executable is available in the system."""
     exe = _get_ffmpeg_exe()
     if exe is None:
@@ -133,7 +133,7 @@ def _escape_concat_path(path: Path) -> str:
     return str(path.resolve()).replace("'", "'\\''")
 
 
-def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
+def _encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
     if not frames:
         return
     try:
@@ -240,7 +240,7 @@ def _describe_scalar(x):
     return result
 
 
-def calc_episode_stats(
+def _calc_episode_stats(
     sampled_obs, sampled_actions, out_idx: int, gidx: int, task_index, fps: int, cameras
 ) -> dict:
     length = len(sampled_obs)
@@ -269,7 +269,7 @@ def calc_episode_stats(
     return stats
 
 
-def write_parquet(dataset, records, output_dir, fps):
+def _write_parquet(dataset, records, output_dir, fps):
     gidx = 0
     for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
         task_index = int(dataset.meta.episodes[episode_index]["task_index"])
@@ -289,28 +289,31 @@ def write_parquet(dataset, records, output_dir, fps):
             }
         )
         parquet_path = (
-            output_dir / "data" / get_chunk_name(episode_index) / f"episode_{episode_index:06d}.parquet"
+            output_dir
+            / "data"
+            / _get_chunk_name(episode_index)
+            / f"episode_{episode_index:06d}.parquet"
         )
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(parquet_path, index=False)
         gidx += num_frames
 
 
-def write_videos(dataset, records, output_dir, fps):
+def _write_videos(dataset, records, output_dir, fps):
     for episode_index, _, _, _, sampled_cameras in records:
         for camera_key in dataset.camera_names:
             video_path = (
                 output_dir
                 / "videos"
-                / get_chunk_name(episode_index)
-                / get_image_name_from_key(camera_key)
+                / _get_chunk_name(episode_index)
+                / _get_image_name_from_key(camera_key)
                 / f"episode_{episode_index:06d}.mp4"
             )
             video_path.parent.mkdir(parents=True, exist_ok=True)
-            encode_mp4(sampled_cameras[camera_key], fps, video_path)
+            _encode_mp4(sampled_cameras[camera_key], fps, video_path)
 
 
-def write_metadata(dataset, records, output_dir, fps, train_split, joint_names):
+def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names):
     METADATA_DIR = "meta"
     episodes_metadata = []
     episodes_stats = []
@@ -352,7 +355,7 @@ def write_metadata(dataset, records, output_dir, fps, train_split, joint_names):
         }
         episodes_metadata.append(rec)
 
-        stats = calc_episode_stats(
+        stats = _calc_episode_stats(
             sampled_obs,
             sampled_actions,
             episode_index,
@@ -473,7 +476,7 @@ def write_metadata(dataset, records, output_dir, fps, train_split, joint_names):
     for cam in dataset.camera_names:
         sample_image = sample_record.cameras[cam].load()
         h, w = sample_image.shape[:2]
-        features[f"{get_image_name_from_key(cam)}"] = {
+        features[f"{_get_image_name_from_key(cam)}"] = {
             "dtype": "video",
             "shape": [h, w, 3],
             "names": ["height", "width", "channels"],
@@ -544,11 +547,11 @@ def to_lerobotv21(
     joint_names = obs_joint_names
 
     # collect downsampled data for each episode
-    records = collect_downsampled_data(dataset, fps, obs_keys, action_keys)
+    records = _collect_downsampled_data(dataset, fps, obs_keys, action_keys)
 
     # save parquet files for each episode (output_dir/data)
-    write_parquet(dataset, records, output_dir, fps)
+    _write_parquet(dataset, records, output_dir, fps)
     # save_videos for each episode (output_dir/videos)
-    write_videos(dataset, records, output_dir, fps)
+    _write_videos(dataset, records, output_dir, fps)
     # episodes metadata and stats
-    write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
+    _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
