@@ -116,18 +116,6 @@ def _is_valid_exe(exe: str) -> bool:
         return False
 
 
-def _has_valid_ffmpeg() -> bool:
-    """Check if a valid ffmpeg executable is available in the system."""
-    exe = _get_ffmpeg_exe()
-    if exe is None:
-        print(
-            "FFmpeg executable not found. Please install ffmpeg in order to encode videos.",
-            file=sys.stderr,
-        )
-        return False
-    return True
-
-
 def _escape_concat_path(path: Path) -> str:
     return str(path.resolve()).replace("'", "'\\''")
 
