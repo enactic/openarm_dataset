@@ -130,6 +130,10 @@ def has_valid_ffmpeg() -> bool:
     return True
 
 
+def _escape_concat_path(path: Path) -> str:
+    return str(path.resolve()).replace("'", "'\\''")
+
+
 def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
     if not frames:
         return
@@ -146,7 +150,7 @@ def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f_list:
             list_path = f_list.name
             for f_path in frames:
-                f_list.write(f"file '{f_path.resolve()}'\n")
+                f_list.write(f"file '{_escape_concat_path(f_path)}'\n")
 
         cmd = [
             ffmpeg_exe,  # use the detected ffmpeg executable path

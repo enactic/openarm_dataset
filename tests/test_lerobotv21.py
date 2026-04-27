@@ -20,6 +20,7 @@ import pytest
 from openarm_dataset import Dataset
 from openarm_dataset._lerobotv21 import (
     _collect_keys_and_joint_names,
+    _escape_concat_path,
     has_valid_ffmpeg,
     collect_downsampled_data,
     write_metadata,
@@ -154,3 +155,12 @@ def test_video(lerobotv21_setup):
         assert video_path.exists(), (
             f"Video file for camera {camera_name} does not exist."
         )
+
+
+def test_escape_concat_path_handles_single_quotes(tmp_path):
+    frame_path = tmp_path / "single'quote.jpeg"
+    frame_path.touch()
+
+    escaped_path = _escape_concat_path(frame_path)
+
+    assert escaped_path == str(frame_path.resolve()).replace("'", "'\\''")
