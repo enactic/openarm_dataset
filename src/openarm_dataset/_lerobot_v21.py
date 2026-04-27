@@ -98,8 +98,7 @@ def _get_ffmpeg_exe() -> str | None:
 def _is_valid_exe(exe: str) -> bool:
     """Check if the given executable is a valid ffmpeg."""
     startupinfo = None
-    creationflags = 0
-    
+
     # On Windows, hide the console window when running ffmpeg
     if hasattr(subprocess, "STARTUPINFO"):
         startupinfo = subprocess.STARTUPINFO()
@@ -112,7 +111,6 @@ def _is_valid_exe(exe: str) -> bool:
                 stdout=null,
                 stderr=subprocess.STDOUT,
                 startupinfo=startupinfo,
-                creationflags=creationflags,
             )
         return True
     except (OSError, ValueError, subprocess.CalledProcessError):
