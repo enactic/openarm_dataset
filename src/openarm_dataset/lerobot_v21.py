@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Conversion script for OpenArm Dataset to LeRobot v2.1 format."""
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -521,7 +523,7 @@ def to_lerobotv21(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
 ) -> None:
-    # Validate inputs
+    """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory."""
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
     if fps <= 0:
