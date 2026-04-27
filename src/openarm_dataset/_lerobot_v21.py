@@ -42,12 +42,18 @@ def _collect_keys_and_joint_names(dataset: Dataset):
     keys = []
     joint_names = []
     for name, embodiment in dataset.meta.equipment.embodiments.items():
-        for component in embodiment.components:
+        if embodiment.components:
+            for component in embodiment.components:
+                for attribute in embodiment.attributes:
+                    key = f"{name}/{component}/{attribute}"
+                    keys.append(key)
+                    joint_names.extend(_get_joint_names(component, embodiment.joints))
+        else: 
             for attribute in embodiment.attributes:
-                key = f"{name}/{component}/{attribute}"
+                key = f"{name}/{attribute}"
                 keys.append(key)
-                joint_names.extend(_get_joint_names(component, embodiment.joints))
-    return keys, joint_names
+                joint_names.extend(_get_joint_names(None, embodiment.joints))
+        return keys, joint_names
 
 
 def _collect_downsampled_data(dataset: Dataset, fps: int, joint_keys):
