@@ -40,13 +40,13 @@ def main():
     )
     parser.add_argument(
         "--smoothing-cutoff",
-        help="Cutoff frequency for smoothing (default: 1.0) if the output format is lerobotv21",
+        help="Cutoff frequency for smoothing (default: 1.0) if the output format is lerobot_v2.1",
         type=float,
         default=1.0,
     )
     parser.add_argument(
         "--train-split",
-        help="Split ratio for training dataset (default: 0.8) if the output format is lerobotv21",
+        help="Split ratio for training dataset (default: 0.8) if the output format is lerobot_v2.1",
         type=float,
         default=0.8,
     )

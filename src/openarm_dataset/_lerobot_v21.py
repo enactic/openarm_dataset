@@ -244,8 +244,8 @@ def _calc_episode_stats(
     sampled_obs, sampled_actions, out_idx: int, gidx: int, task_index, fps: int, cameras
 ) -> dict:
     length = len(sampled_obs)
-    Act = np.vstack(sampled_actions).astype(np.float32)
-    Obs = np.vstack(sampled_obs).astype(np.float32)
+    actions = np.vstack(sampled_actions).astype(np.float32)
+    observations = np.vstack(sampled_obs).astype(np.float32)
     timestamps = np.arange(length, dtype=np.float64) / float(fps)
     stats = {
         "episode_index": out_idx,
@@ -253,8 +253,8 @@ def _calc_episode_stats(
         "dataset_to_index": gidx + length,
         "stats": {},
     }
-    stats["stats"]["action"] = _describe_vector(Act)
-    stats["stats"]["observation.state"] = _describe_vector(Obs)
+    stats["stats"]["action"] = _describe_vector(actions)
+    stats["stats"]["observation.state"] = _describe_vector(observations)
     stats["stats"]["timestamp"] = _describe_scalar(timestamps)
     stats["stats"]["frame_index"] = _describe_scalar(np.arange(length, dtype=np.int64))
     stats["stats"]["episode_index"] = _describe_scalar(
@@ -318,8 +318,8 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     episodes_metadata = []
     episodes_stats = []
 
-    A_all = []
-    O_all = []
+    all_actions = []
+    all_observations = []
     timestamp_all = []
     frame_index_all = []
     episode_index_all = []
@@ -331,8 +331,8 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     gidx = 0
     for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
         # save for overall stats
-        A_all.append(sampled_actions)
-        O_all.append(sampled_obs)
+        all_actions.append(sampled_actions)
+        all_observations.append(sampled_obs)
         timestamp_all.append(np.arange(num_frames, dtype=np.float64) / float(fps))
         frame_index_all.append(np.arange(num_frames, dtype=np.int64))
         episode_index_all.append(np.full(num_frames, episode_index, dtype=np.int64))
@@ -398,11 +398,11 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # stats.json
-    A_all = (
-        np.vstack(A_all) if A_all else np.empty((0, len(joint_names)), dtype=np.float32)
+    all_actions = (
+        np.vstack(all_actions) if all_actions else np.empty((0, len(joint_names)), dtype=np.float32)
     )
-    O_all = (
-        np.vstack(O_all) if O_all else np.empty((0, len(joint_names)), dtype=np.float32)
+    all_observations = (
+        np.vstack(all_observations) if  all_observations else np.empty((0, len(joint_names)), dtype=np.float32)
     )
     timestamp_all = (
         np.concatenate(timestamp_all)
@@ -437,8 +437,8 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     )
 
     overall_stats = {
-        "action": _describe_vector(A_all),
-        "observation.state": _describe_vector(O_all),
+        "action": _describe_vector(all_actions),
+        "observation.state": _describe_vector(all_observations),
         "timestamp": _describe_scalar(timestamp_all),
         "frame_index": _describe_scalar(frame_index_all),
         "episode_index": _describe_scalar(episode_index_all),
