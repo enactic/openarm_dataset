@@ -19,7 +19,6 @@ import subprocess
 import tempfile
 import json
 import shutil
-import os
 
 from .dataset import Dataset
 
@@ -56,7 +55,7 @@ def _collect_keys_and_joint_names(dataset: Dataset):
         return keys, joint_names
 
 
-def _collect_downsampled_data(dataset: Dataset, fps: int, joint_keys):
+def _collect_downsampled_data(dataset: Dataset, fps: int, joint_keys): 
     records = []
     for episode_index in range(dataset.meta.num_episodes):
         samples = dataset.sample(hz=fps, episode_index=episode_index)
@@ -136,12 +135,9 @@ def _encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
         raise RuntimeError(
             "FFmpeg is required for video encoding but was not found. Please install FFmpeg in your conda environment or ensure it is available in your system PATH."
         ) from e
-    list_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f_list:
-            list_path = f_list.name
+    with tempfile.TemporaryDirectory() as temp_dir:
+        list_path = Path(temp_dir) / "ffmpeg_concat.txt"
+        with list_path.open("w") as f_list:
             for f_path in frames:
                 f_list.write(f"file '{_escape_concat_path(f_path)}'\n")
 
@@ -159,7 +155,7 @@ def _encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
             "-r",
             str(fps),
             "-i",
-            list_path,
+            str(list_path),
             "-c:v",
             FFMPEG_CODEC,
             "-preset",
@@ -169,9 +165,6 @@ def _encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
             str(out_mp4),
         ]
         subprocess.run(cmd, check=True, capture_output=not verbose)
-    finally:
-        if list_path and os.path.exists(list_path):
-            os.unlink(list_path)
 
 
 def _describe_vector(X):
