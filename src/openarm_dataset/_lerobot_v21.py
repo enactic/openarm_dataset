@@ -105,13 +105,12 @@ def _is_valid_exe(exe: str) -> bool:
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
     try:
-        with open(os.devnull, "w") as null:
-            subprocess.check_call(
-                [exe, "-version"],
-                stdout=null,
-                stderr=subprocess.STDOUT,
-                startupinfo=startupinfo,
-            )
+        subprocess.check_call(
+            [exe, "-version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            startupinfo=startupinfo,
+        )
         return True
     except (OSError, ValueError, subprocess.CalledProcessError):
         return False
