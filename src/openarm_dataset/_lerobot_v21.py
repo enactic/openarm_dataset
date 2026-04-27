@@ -19,7 +19,6 @@ import subprocess
 import tempfile
 import json
 import shutil
-import sys
 import os
 
 from .dataset import Dataset
@@ -33,35 +32,35 @@ VIDEO_PIX_FMT = "yuv420p"
 VIDEO_CODEC = "h264"
 
 
-def _joint_names_from_attr(attr):
-    component = attr["component"]
-    joints = attr["embodiment"].joints
+def _get_joint_names(component, joints):
     if component is None:
         return [f"{joint}.pos" for joint in joints]
     return [f"{component}_{joint}.pos" for joint in joints]
 
 
-def _collect_keys_and_joint_names(dataset: Dataset, mode: str):
+def _collect_keys_and_joint_names(dataset: Dataset):
     keys = []
     joint_names = []
-
-    for attr in dataset._get_embodiment_attributes(mode, 0):
-        keys.append(attr["key"])
-        joint_names.extend(_joint_names_from_attr(attr))
+    for name, embodiment in dataset.meta.equipment.embodiments.items():
+        for component in embodiment.components:
+            for attribute in embodiment.attributes:
+                key = f"{name}/{component}/{attribute}"
+                keys.append(key)
+                joint_names.extend(_get_joint_names(component, embodiment.joints))
     return keys, joint_names
 
 
-def _collect_downsampled_data(dataset: Dataset, fps: int, obs_keys, act_keys):
+def _collect_downsampled_data(dataset: Dataset, fps: int, joint_keys):
     records = []
     for episode_index in range(dataset.meta.num_episodes):
         samples = dataset.sample(hz=fps, episode_index=episode_index)
         num_frames = len(samples)
         sampled_obs = [
-            np.concatenate([s.obs[k] for k in obs_keys], axis=0).astype(np.float32)
+            np.concatenate([s.obs[k] for k in joint_keys], axis=0).astype(np.float32)
             for s in samples
         ]
         sampled_actions = [
-            np.concatenate([s.action[k] for k in act_keys], axis=0).astype(np.float32)
+            np.concatenate([s.action[k] for k in joint_keys], axis=0).astype(np.float32)
             for s in samples
         ]
         sampled_cameras = {
@@ -324,11 +323,19 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         frame_index_all.append(np.arange(num_frames, dtype=np.int64))
         episode_index_all.append(np.full(num_frames, episode_index, dtype=np.int64))
         task_index_all.append(
-            np.full(num_frames, int(dataset.meta.episodes[episode_index]["task_index"]), dtype=np.int64)
+            np.full(
+                num_frames,
+                int(dataset.meta.episodes[episode_index]["task_index"]),
+                dtype=np.int64,
+            )
         )
         index_all.append(np.arange(gidx, gidx + num_frames, dtype=np.int64))
         success_all.append(
-            np.full(num_frames, bool(dataset.meta.episodes[episode_index]["success"]), dtype=np.int64)
+            np.full(
+                num_frames,
+                bool(dataset.meta.episodes[episode_index]["success"]),
+                dtype=np.int64,
+            )
         )
         last_frame_index_all.append(np.full(num_frames, num_frames - 1, dtype=np.int64))
 
@@ -386,10 +393,14 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
 
     # stats.json
     all_actions = (
-        np.vstack(all_actions) if all_actions else np.empty((0, len(joint_names)), dtype=np.float32)
+        np.vstack(all_actions)
+        if all_actions
+        else np.empty((0, len(joint_names)), dtype=np.float32)
     )
     all_observations = (
-        np.vstack(all_observations) if  all_observations else np.empty((0, len(joint_names)), dtype=np.float32)
+        np.vstack(all_observations)
+        if all_observations
+        else np.empty((0, len(joint_names)), dtype=np.float32)
     )
     timestamp_all = (
         np.concatenate(timestamp_all)
@@ -521,20 +532,12 @@ def to_lerobotv21(
     dataset.set_smoothing(cutoff=smoothing_cutoff)
     # Create the output directories
     output_dir = Path(output_dir)
-
-    obs_keys, obs_joint_names = _collect_keys_and_joint_names(dataset, "obs")
-    action_keys, action_joint_names = _collect_keys_and_joint_names(dataset, "action")
-
-    if obs_joint_names != action_joint_names:
-        raise ValueError(
-            "Observation joint names and action joint names do not match: "
-            f"{obs_joint_names} vs {action_joint_names}"
-        )
-
-    joint_names = obs_joint_names
+    
+    # Collect joint keys and names
+    joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
 
     # collect downsampled data for each episode
-    records = _collect_downsampled_data(dataset, fps, obs_keys, action_keys)
+    records = _collect_downsampled_data(dataset, fps, joint_keys)
 
     # save parquet files for each episode (output_dir/data)
     _write_parquet(dataset, records, output_dir, fps)
