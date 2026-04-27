@@ -52,10 +52,10 @@ def _collect_keys_and_joint_names(dataset: Dataset, mode: str):
 
 
 def collect_downsampled_data(dataset: Dataset, fps: int, obs_keys, act_keys):
-    record = []
-    for i in range(dataset.meta.num_episodes):
-        samples = dataset.sample(hz=fps, episode_index=i)
-        n = len(samples)
+    records = []
+    for episode_index in range(dataset.meta.num_episodes):
+        samples = dataset.sample(hz=fps, episode_index=episode_index)
+        num_frames = len(samples)
         sampled_obs = [
             np.concatenate([s.obs[k] for k in obs_keys], axis=0).astype(np.float32)
             for s in samples
@@ -67,14 +67,14 @@ def collect_downsampled_data(dataset: Dataset, fps: int, obs_keys, act_keys):
         sampled_cameras = {
             k: [Path(s.cameras[k].path) for s in samples] for k in dataset.camera_names
         }
-        episode_record = (
-            i,
-            n,
+        record = (
+            episode_index,
+            num_frames,
             sampled_obs,
             sampled_actions,
             sampled_cameras,
-        )  # (episode_index, num_frames, sampled_obs, sampled_actions, sampled_cameras)
-        record.append(episode_record)
+        )
+        records.append(record)
     return record
 
 
@@ -82,7 +82,7 @@ def get_chunk_name(episode_id: int):
     return f"chunk-{episode_id // CHUNK_SIZE:03d}"
 
 
-def get_imagename_from_key(key: str):
+def get_image_name_from_key(key: str):
     return f"observation.images.{key}"
 
 
@@ -99,8 +99,9 @@ def _is_valid_exe(exe: str) -> bool:
     """Check if the given executable is a valid ffmpeg."""
     startupinfo = None
     creationflags = 0
-
-    if sys.platform.startswith("win"):
+    
+    # On Windows, hide the console window when running ffmpeg
+    if hasattr(subprocess, "STARTUPINFO"):
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
@@ -147,7 +148,9 @@ def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
         ) from e
     list_path = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f_list:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f_list:
             list_path = f_list.name
             for f_path in frames:
                 f_list.write(f"file '{_escape_concat_path(f_path)}'\n")
@@ -303,7 +306,7 @@ def write_videos(dataset, record, output_dir, fps):
                 output_dir
                 / "videos"
                 / get_chunk_name(i)
-                / get_imagename_from_key(camera_key)
+                / get_image_name_from_key(camera_key)
                 / f"episode_{i:06d}.mp4"
             )
             video_path.parent.mkdir(parents=True, exist_ok=True)
@@ -474,7 +477,7 @@ def write_metadata(dataset, record, output_dir, fps, train_split, joint_names):
     for cam in dataset.camera_names:
         sample_image = sample_record.cameras[cam].load()
         h, w = sample_image.shape[:2]
-        features[f"{get_imagename_from_key(cam)}"] = {
+        features[f"{get_image_name_from_key(cam)}"] = {
             "dtype": "video",
             "shape": [h, w, 3],
             "names": ["height", "width", "channels"],
