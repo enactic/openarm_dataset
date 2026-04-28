@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """Convert OpenArm dataset format."""
-
 import argparse
 import openarm_dataset
 import pathlib
@@ -32,9 +31,39 @@ def main():
         help="Path of converted OpenArm dataset",
         type=pathlib.Path,
     )
+    parser.add_argument(
+        "--format",
+        help="Format of the output dataset (default: openarm)",
+        default="openarm",
+        choices=["openarm", "lerobot_v2.1"],
+    )
+    parser.add_argument(
+        "--fps",
+        help="Frames per second for the output dataset (default: 30) if the output format is lerobot_v2.1",
+        type=int,
+        default=30,
+    )
+    parser.add_argument(
+        "--smoothing-cutoff",
+        help="Cutoff frequency for smoothing (default: 1.0) if the output format is lerobot_v2.1",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--train-split",
+        help="Split ratio for training dataset (default: 0.8) if the output format is lerobot_v2.1",
+        type=float,
+        default=0.8,
+    )
     args = parser.parse_args()
+    write_kwargs = {"format": args.format}
+    if args.format == "lerobot_v2.1":
+        write_kwargs["fps"] = args.fps
+        write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
+        write_kwargs["train_split"] = args.train_split
+
     old_dataset = openarm_dataset.Dataset(args.input)
-    old_dataset.write(args.output)
+    old_dataset.write(args.output, **write_kwargs)
 
 
 if __name__ == "__main__":

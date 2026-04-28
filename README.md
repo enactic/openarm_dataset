@@ -84,7 +84,7 @@ dict_keys(['left_wrist', 'right_wrist', 'ceiling', 'head'])
 Sampling:
 
 ```python
->>> samples = dataset.samples(hz=30, episode_index=0)
+>>> samples = dataset.sample(hz=30, episode_index=0)
 >>> samples
 [Sample(timestamp=1772010251.6202147), Sample(timestamp=1772010251.653548)]
 >>> samples[0].timestamp
@@ -100,7 +100,7 @@ np.float64(1772010251.6202147)
 >>> [(name, image.shape) for name, image in samples[0].cameras.items()]
 [('left_wrist', (600, 960, 3)), ('right_wrist', (600, 960, 3)), ('ceiling', (600, 960, 3)), ('head', (600, 960, 3))]
 
->>> samples = dataset.samples(hz=30, episode_index=0, load_camera_data=False)
+>>> samples = dataset.sample(hz=30, episode_index=0)
 >>> samples[0].cameras.items()
 dict_items([('left_wrist', PosixPath('1772010251620214727.jpeg')), ('right_wrist', PosixPath('1772010251628789283.jpeg')), ('ceiling', PosixPath('1772010251629083055.jpeg')), ('head', PosixPath('1772010251629774985.jpeg'))])
 ```
