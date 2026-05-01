@@ -126,7 +126,7 @@ def test_video(lerobot_v21_setup):
 
 def test_load(lerobot_v21_setup):
     dataset, lerobot_path = lerobot_v21_setup
-    lerobot_dataset = LeRobotDataset(lerobot_path)
+    lerobot_dataset = LeRobotDataset(repo_id="test/data", root=lerobot_path)
 
     # check num episodes
     assert lerobot_dataset.num_episodes == dataset.meta.num_episodes, (
