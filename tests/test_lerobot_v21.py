@@ -72,23 +72,6 @@ def test_metadata(lerobot_v21_setup):
     )
 
 
-def test_load(lerobot_v21_setup):
-    dataset, lerobot_path = lerobot_v21_setup
-    lerobot_dataset = LeRobotDataset(lerobot_path)
-
-    # check num episodes
-    assert lerobot_dataset.num_episodes == dataset.meta.num_episodes, (
-        "Number of episodes in LeRobotDataset does not match the original dataset."
-    )
-
-    # check tasks
-    assert len(lerobot_dataset.meta.tasks) == len(dataset.meta.tasks), (
-        "Number of tasks in LeRobotDataset does not match the original dataset."
-    )
-
-
-
-
 def test_data(lerobot_v21_setup):
     dataset, lerobot_path = lerobot_v21_setup
     data_path = lerobot_path / "data" / "chunk-000" / "episode_000000.parquet"
@@ -139,3 +122,18 @@ def test_video(lerobot_v21_setup):
         assert video_path.exists(), (
             f"Video file for camera {camera_name} does not exist."
         )
+
+
+def test_load(lerobot_v21_setup):
+    dataset, lerobot_path = lerobot_v21_setup
+    lerobot_dataset = LeRobotDataset(lerobot_path)
+
+    # check num episodes
+    assert lerobot_dataset.num_episodes == dataset.meta.num_episodes, (
+        "Number of episodes in LeRobotDataset does not match the original dataset."
+    )
+
+    # check tasks
+    assert len(lerobot_dataset.meta.tasks) == len(dataset.meta.tasks), (
+        "Number of tasks in LeRobotDataset does not match the original dataset."
+    )
