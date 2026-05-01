@@ -117,7 +117,7 @@ class Metadata:
         """Write this metadata as the latest OpenArm dataset format."""
         output = pathlib.Path(output)
         data = copy.deepcopy(self.data)
-        latest_version = "0.2.0"
+        latest_version = "0.3.0"
         data["version"] = latest_version
         if self.version is None:
             data["equipment"] = self._convert_unversioned_equipment()

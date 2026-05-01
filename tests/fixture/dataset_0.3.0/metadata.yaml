@@ -1,0 +1,41 @@
+version: "0.3.0"
+location: Test
+operator: Tester
+operation_type: teleop
+tasks:
+  - prompt: Run test.
+    description: Longer task description if need.
+episodes:
+  - id: "0"
+    success: false
+    task_index: 0
+  - id: "3"
+    success: true
+    task_index: 0
+equipment:
+  id: Test
+  version: "1.0"
+  embodiments:
+    arms:
+      id: OpenArm
+      version: "2.0"
+  perceptions:
+    cameras:
+      wrist_left: {}
+      wrist_right: {}
+      ceiling: {}
+      head: {}
+frequencies:
+  action:
+    arms:
+      left: 250.0
+      right: 250.0
+  cameras:
+    ceiling: 30.303030303030305
+    head: 30.303030303030305
+    wrist_left: 30.303030303030305
+    wrist_right: 30.303030303030305
+  obs:
+    arms:
+      left: 250.0
+      right: 250.0

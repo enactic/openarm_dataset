@@ -233,6 +233,20 @@ class Dataset:
                 base_path = self._episode_path(episode_index) / type_ / name
             if embodiment.components:
                 for component in embodiment.components:
+                    state_path = base_path / component / "state.parquet"
+                    if state_path.exists():
+                        for attr_name in ("qpos", "qvel", "qtorque"):
+                            attributes.append(
+                                {
+                                    "key": f"{name}/{component}/{attr_name}",
+                                    "embodiment": embodiment,
+                                    "component": component,
+                                    "name": attr_name,
+                                    "path": state_path,
+                                    "column": attr_name,
+                                }
+                            )
+                        continue
                     for attribute in embodiment.attributes:
                         key = f"{name}/{component}/{attribute}"
                         # Unversioned dataset.
@@ -250,6 +264,7 @@ class Dataset:
                                 "component": component,
                                 "name": attribute,
                                 "path": path,
+                                "column": None,
                             }
                         )
             else:
@@ -262,6 +277,7 @@ class Dataset:
                             "component": None,
                             "name": attribute,
                             "path": base_path / f"{attribute}.parquet",
+                            "column": None,
                         }
                     )
         return attributes
@@ -280,6 +296,7 @@ class Dataset:
                 attribute["path"],
                 use_unixtime=use_unixtime,
                 cutoff=cutoff,
+                column=attribute.get("column"),
             )
         return values
 
@@ -289,18 +306,27 @@ class Dataset:
         path: str | os.PathLike,
         use_unixtime: bool = False,
         cutoff: float = None,
+        column: str = None,
     ) -> pd.DataFrame:
         df = pd.read_parquet(path)
-        # No version and 0.1.0 use "positions"
-        if "positions" in df:
+        if column is not None:
+            # 0.3.0 uses state.parquet with qpos/qvel/qtorque columns.
+            column_name = column
+            drop_columns = [
+                c for c in ("qpos", "qvel", "qtorque") if c in df.columns
+            ]
+        elif "positions" in df:
+            # No version and 0.1.0 use "positions"
             column_name = "positions"
+            drop_columns = ["positions"]
         else:
             column_name = "value"
+            drop_columns = ["value"]
         df[list(embodiment.joints)] = pd.DataFrame(
             df[column_name].tolist(),
             index=df.index,
         )
-        df = df.drop(columns=[column_name])
+        df = df.drop(columns=drop_columns)
         if use_unixtime:
             df["timestamp"] = df["timestamp"].astype("int64") / 1e9
         df = df.set_index("timestamp")
@@ -353,6 +379,7 @@ class Dataset:
         self._write_camera_data(output, episode_index)
 
     def _write_embodiment_data(self, output: Path, episode_index: int):
+        written_state_paths = set()
         for type_ in ["action", "obs"]:
             for attribute in self._get_embodiment_attributes(type_, episode_index):
                 embodiment = attribute["embodiment"]
@@ -365,6 +392,19 @@ class Dataset:
                     / type_
                     / embodiment.name
                 )
+                # 0.3.0 state.parquet (qpos/qvel/qtorque) is shared across
+                # attributes for the same component; copy it once.
+                if attribute.get("column") is not None:
+                    if component:
+                        new_path = base_path / component / "state.parquet"
+                    else:
+                        new_path = base_path / "state.parquet"
+                    if new_path in written_state_paths:
+                        continue
+                    new_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(attribute["path"], new_path)
+                    written_state_paths.add(new_path)
+                    continue
                 if component:
                     new_path = base_path / component / f"{name}.parquet"
                 else:
