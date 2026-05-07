@@ -22,7 +22,7 @@ import pandas as pd
 import scipy.signal as signal
 
 from .camera import Camera
-from .metadata import Metadata, Embodiment
+from .metadata import Metadata
 from .sampler import Sampler, Sample
 
 
@@ -243,7 +243,6 @@ class Dataset:
                                     "component": component,
                                     "name": attr_name,
                                     "path": state_path,
-                                    "column": attr_name,
                                 }
                             )
                         continue
@@ -264,7 +263,6 @@ class Dataset:
                                 "component": component,
                                 "name": attribute,
                                 "path": path,
-                                "column": None,
                             }
                         )
             else:
@@ -277,7 +275,6 @@ class Dataset:
                             "component": None,
                             "name": attribute,
                             "path": base_path / f"{attribute}.parquet",
-                            "column": None,
                         }
                     )
         return attributes
@@ -292,26 +289,23 @@ class Dataset:
         values = {}
         for attribute in self._get_embodiment_attributes(type_, episode_index):
             values[attribute["key"]] = self._load_embodiment_value(
-                attribute["embodiment"],
-                attribute["path"],
+                attribute,
                 use_unixtime=use_unixtime,
                 cutoff=cutoff,
-                column=attribute.get("column"),
             )
         return values
 
     def _load_embodiment_value(
         self,
-        embodiment: Embodiment,
-        path: str | os.PathLike,
+        attribute: dict,
         use_unixtime: bool = False,
         cutoff: float = None,
-        column: str = None,
     ) -> pd.DataFrame:
-        df = pd.read_parquet(path)
-        if column is not None:
+
+        df = pd.read_parquet(attribute["path"])
+        if attribute["path"].name == "state.parquet":
             # 0.3.0 uses state.parquet with qpos/qvel/qtorque columns.
-            column_name = column
+            column_name = attribute["name"]
             drop_columns = [c for c in ("qpos", "qvel", "qtorque") if c in df.columns]
         elif "positions" in df:
             # No version and 0.1.0 use "positions"
@@ -320,7 +314,7 @@ class Dataset:
         else:
             column_name = "value"
             drop_columns = ["value"]
-        df[list(embodiment.joints)] = pd.DataFrame(
+        df[list(attribute["embodiment"].joints)] = pd.DataFrame(
             df[column_name].tolist(),
             index=df.index,
         )
@@ -392,7 +386,7 @@ class Dataset:
                 )
                 # 0.3.0 state.parquet (qpos/qvel/qtorque) is shared across
                 # attributes for the same component; copy it once.
-                if attribute.get("column") is not None:
+                if attribute["path"].name == "state.parquet":
                     if component:
                         new_path = base_path / component / "state.parquet"
                     else:
