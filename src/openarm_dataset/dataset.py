@@ -301,7 +301,6 @@ class Dataset:
         use_unixtime: bool = False,
         cutoff: float = None,
     ) -> pd.DataFrame:
-
         df = pd.read_parquet(attribute["path"])
         if attribute["path"].name == "state.parquet":
             # 0.3.0 uses state.parquet with qpos/qvel/qtorque columns.
