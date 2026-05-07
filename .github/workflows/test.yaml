@@ -37,6 +37,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y -V ffmpeg
       - name: Sync dependencies
-        run: uv sync
+        run: uv sync -p 3.12
       - name: Run pytest
         run: uv run pytest

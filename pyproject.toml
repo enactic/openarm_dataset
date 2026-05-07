@@ -45,6 +45,7 @@ openarm-dataset-convert = "openarm_dataset.convert:main"
 dev = [
     "pytest",
     "ruff == 0.14.11", # sync with .pre-commit-config.yaml
+    "lerobot == 0.3.3",
 ]
 
 [tool.setuptools]

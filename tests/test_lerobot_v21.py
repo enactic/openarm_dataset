@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from openarm_dataset import Dataset
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
 DATASET_0_2_0_PATH = FIXTURE_DIR / "dataset_0.2.0"
@@ -121,3 +122,18 @@ def test_video(lerobot_v21_setup):
         assert video_path.exists(), (
             f"Video file for camera {camera_name} does not exist."
         )
+
+
+def test_load(lerobot_v21_setup):
+    dataset, lerobot_path = lerobot_v21_setup
+    lerobot_dataset = LeRobotDataset(repo_id="test/data", root=lerobot_path)
+
+    # check num episodes
+    assert lerobot_dataset.num_episodes == dataset.meta.num_episodes, (
+        "Number of episodes in LeRobotDataset does not match the original dataset."
+    )
+
+    # check tasks
+    assert len(lerobot_dataset.meta.tasks) == len(dataset.meta.tasks), (
+        "Number of tasks in LeRobotDataset does not match the original dataset."
+    )
