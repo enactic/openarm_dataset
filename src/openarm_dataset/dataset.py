@@ -312,9 +312,7 @@ class Dataset:
         if column is not None:
             # 0.3.0 uses state.parquet with qpos/qvel/qtorque columns.
             column_name = column
-            drop_columns = [
-                c for c in ("qpos", "qvel", "qtorque") if c in df.columns
-            ]
+            drop_columns = [c for c in ("qpos", "qvel", "qtorque") if c in df.columns]
         elif "positions" in df:
             # No version and 0.1.0 use "positions"
             column_name = "positions"
