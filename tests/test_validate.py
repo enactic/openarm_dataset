@@ -23,8 +23,20 @@ from openarm_dataset.dataset import Dataset
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.2.0"
 
 
+def _drain(gen):
+    """Collect yielded error messages and boolean return value from validate()."""
+    errors = []
+    try:
+        while True:
+            errors.append(next(gen))
+    except StopIteration as e:
+        return errors, e.value
+
+
 def test_validate_valid_dataset():
-    assert Dataset(DATASET_DIR).validate() is True
+    errors, valid = _drain(Dataset(DATASET_DIR).validate())
+    assert errors == []
+    assert valid is True
 
 
 def test_validate_invalid_dataset_with_null_qpos(tmp_path):
@@ -40,7 +52,11 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     df["value"] = values
     df.to_parquet(dest_dir / "qpos.parquet")
 
-    assert Dataset(tmp_path).validate() is False
+    errors, valid = _drain(Dataset(tmp_path).validate())
+    assert len(errors) == 1
+    assert "qpos.parquet" in errors[0]
+    assert "null" in errors[0]
+    assert valid is False
 
 
 def test_validate_multiple_invalid_qpos(tmp_path):
@@ -58,7 +74,9 @@ def test_validate_multiple_invalid_qpos(tmp_path):
         df["value"] = values
         df.to_parquet(dest_dir / "qpos.parquet")
 
-    assert Dataset(tmp_path).validate() is False
+    errors, valid = _drain(Dataset(tmp_path).validate())
+    assert len(errors) == 2
+    assert valid is False
 
 
 def test_validate_cli_valid_dataset():

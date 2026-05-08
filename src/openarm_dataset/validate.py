@@ -31,10 +31,13 @@ def main():
     )
     args = parser.parse_args()
     dataset = openarm_dataset.Dataset(args.input)
-    if dataset.validate():
+    valid = True
+    for error in dataset.validate():
+        print(error, file=sys.stderr)
+        valid = False
+    if valid:
         print("Dataset is valid.")
     else:
-        print("Dataset is invalid: qpos.parquet includes null values", file=sys.stderr)
         sys.exit(1)
 
 
