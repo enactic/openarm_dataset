@@ -73,6 +73,7 @@ def test_validate_cli_valid_dataset():
         text=True,
     )
     assert result.returncode == 0
+    assert result.stdout == ""
 
 
 def test_validate_cli_invalid_dataset(tmp_path):
