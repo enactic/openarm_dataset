@@ -23,6 +23,7 @@ import json
 import shutil
 
 from .dataset import Dataset
+from PIL import Image, ImageStat
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -227,6 +228,52 @@ def _describe_scalar(x):
     return result
 
 
+def _describe_images(image_paths: list[Path]):
+    """Compute per-channel min/max/mean/std for RGB images, streaming over files."""
+    ch_min = np.full(3, np.inf, dtype=np.float64)
+    ch_max = np.full(3, -np.inf, dtype=np.float64)
+    ch_sum = np.zeros(3, dtype=np.float64)
+    ch_sumsq = np.zeros(3, dtype=np.float64)
+
+    total_pixels = 0
+    success_count = 0
+    for path in image_paths:
+        try:
+            with Image.open(path) as img:
+                stat = ImageStat.Stat(img.convert("RGB"))
+
+            extrema = np.asarray(stat.extrema, dtype=np.float64)
+            ch_min = np.minimum(ch_min, extrema[:, 0])
+            ch_max = np.maximum(ch_max, extrema[:, 1])
+            ch_sum += np.asarray(stat.sum, dtype=np.float64)
+            ch_sumsq += np.asarray(stat.sum2, dtype=np.float64)
+
+            total_pixels += int(stat.count[0])
+            success_count += 1
+
+        except Exception as e:
+            print(f"Warning: Failed to read image {path}: {e}")
+
+    if total_pixels == 0:
+        raise ValueError("No valid images were loaded.")
+
+    mean = ch_sum / total_pixels
+    var = ch_sumsq / total_pixels - np.square(mean)
+    var = np.maximum(var, 0.0)  # 数値誤差対策
+    std = np.sqrt(var)
+
+    # [0, 255] -> [0, 1]
+    scale = 255.0
+    stats = {
+        "min": [[[float(v / scale)]] for v in ch_min],
+        "max": [[[float(v / scale)]] for v in ch_max],
+        "mean": [[[float(v / scale)]] for v in mean],
+        "std": [[[float(v / scale)]] for v in std],
+        "count": [success_count],
+    }
+    return stats
+
+
 def _calc_episode_stats(
     sampled_obs, sampled_actions, out_idx: int, gidx: int, task_index, fps: int, cameras
 ) -> dict:
@@ -253,6 +300,9 @@ def _calc_episode_stats(
     stats["stats"]["task_index"] = _describe_scalar(
         np.full(length, task_index, dtype=np.int64)
     )
+    for cam_key, cam_paths in cameras.items():
+        print(f"Calculating image stats for episode {out_idx}, camera {cam_key}...")
+        stats["stats"][_get_image_name_from_key(cam_key)] = _describe_images(cam_paths)
     return stats
 
 
@@ -316,7 +366,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     last_frame_index_all = []
 
     gidx = 0
-    for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
+    for episode_index, num_frames, sampled_obs, sampled_actions, sampled_cameras in records:
         # save for overall stats
         all_actions.append(sampled_actions)
         all_observations.append(sampled_obs)
@@ -357,7 +407,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
             gidx,
             task_index,
             fps,
-            dataset.camera_names,
+            sampled_cameras,
         )
         episodes_stats.append(stats)
         gidx += len(sampled_obs)
