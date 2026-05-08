@@ -80,12 +80,12 @@ class Dataset:
                     if path in checked_paths or not path.exists():
                         continue
                     checked_paths.add(path)
-                    table = pq.read_table(path)
+                    arrow_table = pq.read_table(path)
                     has_null = False
-                    for name in table.schema.names:
+                    for name in arrow_table.schema.names:
                         if name == "timestamp":
                             continue
-                        col = table.column(name)
+                        col = arrow_table.column(name)
                         if pc.any(pc.is_null(col)).as_py():
                             has_null = True
                             break
