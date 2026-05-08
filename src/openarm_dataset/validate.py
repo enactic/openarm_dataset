@@ -32,9 +32,7 @@ def main():
     args = parser.parse_args()
     dataset = openarm_dataset.Dataset(args.input)
     valid = dataset.validate(on_error=lambda error: print(error, file=sys.stderr))
-    if valid:
-        print("Dataset is valid.")
-    else:
+    if not valid:
         sys.exit(1)
 
 
