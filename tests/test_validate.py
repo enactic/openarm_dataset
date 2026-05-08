@@ -24,7 +24,7 @@ DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.2.0"
 
 
 def test_validate_valid_dataset():
-    errors = Dataset(DATASET_DIR).validate()
+    errors = list(Dataset(DATASET_DIR).validate())
     assert errors == []
 
 
@@ -43,7 +43,7 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     df["value"] = values
     df.to_parquet(dest_dir / "qpos.parquet")
 
-    errors = Dataset(tmp_path).validate()
+    errors = list(Dataset(tmp_path).validate())
     assert len(errors) == 1
     assert "qpos.parquet" in errors[0]
     assert "null" in errors[0]
@@ -64,7 +64,7 @@ def test_validate_multiple_invalid_qpos(tmp_path):
         df["value"] = values
         df.to_parquet(dest_dir / "qpos.parquet")
 
-    errors = Dataset(tmp_path).validate()
+    errors = list(Dataset(tmp_path).validate())
     assert len(errors) == 2
 
 

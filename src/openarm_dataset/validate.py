@@ -31,7 +31,7 @@ def main():
     )
     args = parser.parse_args()
     dataset = openarm_dataset.Dataset(args.input)
-    errors = dataset.validate()
+    errors = list(dataset.validate())
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
