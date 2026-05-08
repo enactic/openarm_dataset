@@ -82,8 +82,7 @@ class Dataset:
                     for col in df.columns:
                         if col == "timestamp":
                             continue
-                        expanded = pd.DataFrame(df[col].tolist(), index=df.index)
-                        if expanded.isnull().any().any():
+                        if df[col].explode().isnull().any():
                             has_null = True
                             break
                     if has_null:
