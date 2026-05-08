@@ -69,7 +69,6 @@ class Dataset:
         valid = True
         checked_paths = set()
         for episode_index in range(self.num_episodes):
-            episode_id = self._episode_id(episode_index)
             for type_name in ("obs", "action"):
                 for attribute in self._get_embodiment_attributes(
                     type_name, episode_index
