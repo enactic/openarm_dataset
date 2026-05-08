@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,8 +31,6 @@ def test_validate_valid_dataset():
 
 
 def test_validate_invalid_dataset_with_null_qpos(tmp_path):
-    import shutil
-
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
     df = pd.read_parquet(state_path)
@@ -46,8 +45,6 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
 
 
 def test_validate_multiple_invalid_qpos(tmp_path):
-    import shutil
-
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     for side in ("left", "right"):
         state_path = (
@@ -78,8 +75,6 @@ def test_validate_cli_valid_dataset():
 
 
 def test_validate_cli_invalid_dataset(tmp_path):
-    import shutil
-
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
     df = pd.read_parquet(state_path)
