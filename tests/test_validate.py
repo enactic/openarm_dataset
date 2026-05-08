@@ -44,7 +44,7 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
 
     errors = []
     assert not Dataset(tmp_path).validate(on_error=errors.append)
-    assert errors == ["episodes/0/obs/arms/left/qpos: includes null values"]
+    assert errors == ["episodes/0/obs/arms/left/state.parquet: includes null values"]
 
 
 def test_validate_multiple_invalid_qpos(tmp_path):
@@ -63,7 +63,10 @@ def test_validate_multiple_invalid_qpos(tmp_path):
 
     errors = []
     assert not Dataset(tmp_path).validate(on_error=errors.append)
-    assert len(errors) == 2
+    assert errors == [
+        "episodes/0/obs/arms/right/state.parquet: includes null values",
+        "episodes/0/obs/arms/left/state.parquet: includes null values",
+    ]
 
 
 def test_validate_cli_valid_dataset():

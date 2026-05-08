@@ -81,9 +81,8 @@ class Dataset:
                     df = pd.read_parquet(path)
                     if df.isnull().any().any():
                         if on_error is not None:
-                            key = attribute["key"]
                             on_error(
-                                f"episodes/{episode_id}/{type_name}/{key}: "
+                                f"{path.relative_to(self.root_path)}: "
                                 "includes null values"
                             )
                         valid = False
