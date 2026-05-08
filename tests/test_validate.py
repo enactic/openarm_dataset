@@ -33,9 +33,7 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     import shutil
 
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    state_path = (
-        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
-    )
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
     df = pd.read_parquet(state_path)
     values = df["qpos"].tolist()
     values[0] = None
@@ -83,9 +81,7 @@ def test_validate_cli_invalid_dataset(tmp_path):
     import shutil
 
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    state_path = (
-        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
-    )
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
     df = pd.read_parquet(state_path)
     values = df["qpos"].tolist()
     values[0] = None
