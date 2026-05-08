@@ -78,7 +78,15 @@ class Dataset:
                         continue
                     checked_paths.add(path)
                     df = pd.read_parquet(path)
-                    if df.isnull().any().any():
+                    has_null = False
+                    for col in df.columns:
+                        if col == "timestamp":
+                            continue
+                        expanded = pd.DataFrame(df[col].tolist(), index=df.index)
+                        if expanded.isnull().any().any():
+                            has_null = True
+                            break
+                    if has_null:
                         if on_error is not None:
                             on_error(
                                 f"{path.relative_to(self.root_path)}: "
