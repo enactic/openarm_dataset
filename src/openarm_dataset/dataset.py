@@ -67,13 +67,26 @@ class Dataset:
 
         """
         valid = True
-        for qpos_path in sorted(self.root_path.rglob("qpos.parquet")):
-            df = pd.read_parquet(qpos_path)
-            if df.isnull().any().any():
-                if on_error is not None:
-                    relative = qpos_path.relative_to(self.root_path)
-                    on_error(f"{relative}: qpos.parquet includes null values")
-                valid = False
+        checked_paths = set()
+        for episode_index in range(self.num_episodes):
+            episode_id = self._episode_id(episode_index)
+            for type_name in ("obs", "action"):
+                for attribute in self._get_embodiment_attributes(
+                    type_name, episode_index
+                ):
+                    path = attribute["path"]
+                    if path in checked_paths or not path.exists():
+                        continue
+                    checked_paths.add(path)
+                    df = pd.read_parquet(path)
+                    if df.isnull().any().any():
+                        if on_error is not None:
+                            key = attribute["key"]
+                            on_error(
+                                f"episodes/{episode_id}/{type_name}/{key}: "
+                                "includes null values"
+                            )
+                        valid = False
         return valid
 
     @property

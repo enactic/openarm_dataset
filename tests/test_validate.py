@@ -33,20 +33,18 @@ def test_validate_valid_dataset():
 def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     import shutil
 
-    shutil.copy(DATASET_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
-    src = DATASET_DIR / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
-    dest_dir = tmp_path / "episodes" / "0" / "obs" / "arms" / "left"
-    dest_dir.mkdir(parents=True)
-    df = pd.read_parquet(src)
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    qpos_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
+    df = pd.read_parquet(qpos_path)
     values = df["value"].tolist()
     values[0] = None
     df["value"] = values
-    df.to_parquet(dest_dir / "qpos.parquet")
+    df.to_parquet(qpos_path)
 
     errors = []
     valid = Dataset(tmp_path).validate(on_error=errors.append)
     assert len(errors) == 1
-    assert "qpos.parquet" in errors[0]
+    assert "qpos" in errors[0]
     assert "null" in errors[0]
     assert valid is False
 
@@ -54,17 +52,16 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
 def test_validate_multiple_invalid_qpos(tmp_path):
     import shutil
 
-    shutil.copy(DATASET_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
-    src_dir = DATASET_DIR / "episodes" / "0" / "obs" / "arms"
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     for side in ("left", "right"):
-        src = src_dir / side / "qpos.parquet"
-        dest_dir = tmp_path / "episodes" / "0" / "obs" / "arms" / side
-        dest_dir.mkdir(parents=True)
-        df = pd.read_parquet(src)
+        qpos_path = (
+            tmp_path / "episodes" / "0" / "obs" / "arms" / side / "qpos.parquet"
+        )
+        df = pd.read_parquet(qpos_path)
         values = df["value"].tolist()
         values[0] = None
         df["value"] = values
-        df.to_parquet(dest_dir / "qpos.parquet")
+        df.to_parquet(qpos_path)
 
     errors = []
     valid = Dataset(tmp_path).validate(on_error=errors.append)
@@ -85,13 +82,11 @@ def test_validate_cli_valid_dataset():
 def test_validate_cli_invalid_dataset(tmp_path):
     import shutil
 
-    shutil.copy(DATASET_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
-    src = DATASET_DIR / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
-    dest_dir = tmp_path / "episodes" / "0" / "obs" / "arms" / "left"
-    dest_dir.mkdir(parents=True)
-    df = pd.read_parquet(src)
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    qpos_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
+    df = pd.read_parquet(qpos_path)
     df.iloc[0, df.columns.get_loc("value")] = None
-    df.to_parquet(dest_dir / "qpos.parquet")
+    df.to_parquet(qpos_path)
 
     result = subprocess.run(
         [sys.executable, "-m", "openarm_dataset.validate", str(tmp_path)],
