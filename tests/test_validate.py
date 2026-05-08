@@ -44,7 +44,7 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     errors = []
     valid = Dataset(tmp_path).validate(on_error=errors.append)
     assert len(errors) == 1
-    assert "qpos" in errors[0]
+    assert "episodes/0/obs/arms/left/qpos" in errors[0]
     assert "null" in errors[0]
     assert valid is False
 
