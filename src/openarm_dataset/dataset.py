@@ -18,6 +18,9 @@ import os
 from pathlib import Path
 import shutil
 
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
 import pandas as pd
 import scipy.signal as signal
 
@@ -77,14 +80,21 @@ class Dataset:
                     if path in checked_paths or not path.exists():
                         continue
                     checked_paths.add(path)
-                    df = pd.read_parquet(path)
+                    table = pq.read_table(path)
                     has_null = False
-                    for col in df.columns:
-                        if col == "timestamp":
+                    for name in table.schema.names:
+                        if name == "timestamp":
                             continue
-                        if df[col].explode().isnull().any():
+                        col = table.column(name)
+                        if pc.any(pc.is_null(col)).as_py():
                             has_null = True
                             break
+                        if pa.types.is_list(col.type) or pa.types.is_large_list(
+                            col.type
+                        ):
+                            if pc.any(pc.is_null(pc.list_flatten(col))).as_py():
+                                has_null = True
+                                break
                     if has_null:
                         if on_error is not None:
                             on_error(
