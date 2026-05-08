@@ -98,4 +98,6 @@ def test_validate_cli_invalid_dataset(tmp_path):
         text=True,
     )
     assert result.returncode == 1
-    assert "null" in result.stderr
+    assert result.stderr == (
+        "episodes/0/obs/arms/left/state.parquet: includes null values\n"
+    )
