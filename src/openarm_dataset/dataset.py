@@ -54,6 +54,21 @@ class Dataset:
         """Set smoothing."""
         self._smoothing_cutoff = cutoff
 
+    def validate(self) -> list[str]:
+        """Validate this dataset.
+
+        Returns:
+            A list of error messages. An empty list means the dataset is valid.
+
+        """
+        errors = []
+        for qpos_path in sorted(self.root_path.rglob("qpos.parquet")):
+            df = pd.read_parquet(qpos_path)
+            if df.isnull().any().any():
+                relative = qpos_path.relative_to(self.root_path)
+                errors.append(f"{relative}: qpos.parquet includes null values")
+        return errors
+
     @property
     def num_episodes(self) -> int:
         """Return number of episodes."""

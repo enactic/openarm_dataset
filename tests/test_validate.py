@@ -18,17 +18,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from openarm_dataset.validate import validate
+from openarm_dataset.dataset import Dataset
 
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.2.0"
 
 
 def test_validate_valid_dataset():
-    errors = validate(DATASET_DIR)
+    errors = Dataset(DATASET_DIR).validate()
     assert errors == []
 
 
 def test_validate_invalid_dataset_with_null_qpos(tmp_path):
+    import shutil
+
+    shutil.copy(DATASET_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
     # Copy a valid qpos.parquet and inject a null value
     src = DATASET_DIR / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
     dest_dir = tmp_path / "episodes" / "0" / "obs" / "arms" / "left"
@@ -40,13 +43,16 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     df["value"] = values
     df.to_parquet(dest_dir / "qpos.parquet")
 
-    errors = validate(tmp_path)
+    errors = Dataset(tmp_path).validate()
     assert len(errors) == 1
     assert "qpos.parquet" in errors[0]
     assert "null" in errors[0]
 
 
 def test_validate_multiple_invalid_qpos(tmp_path):
+    import shutil
+
+    shutil.copy(DATASET_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
     src_dir = DATASET_DIR / "episodes" / "0" / "obs" / "arms"
     for side in ("left", "right"):
         src = src_dir / side / "qpos.parquet"
@@ -58,7 +64,7 @@ def test_validate_multiple_invalid_qpos(tmp_path):
         df["value"] = values
         df.to_parquet(dest_dir / "qpos.parquet")
 
-    errors = validate(tmp_path)
+    errors = Dataset(tmp_path).validate()
     assert len(errors) == 2
 
 
@@ -73,6 +79,9 @@ def test_validate_cli_valid_dataset():
 
 
 def test_validate_cli_invalid_dataset(tmp_path):
+    import shutil
+
+    shutil.copy(DATASET_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
     src = DATASET_DIR / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
     dest_dir = tmp_path / "episodes" / "0" / "obs" / "arms" / "left"
     dest_dir.mkdir(parents=True)

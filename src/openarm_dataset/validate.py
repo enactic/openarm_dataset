@@ -18,27 +18,7 @@ import argparse
 import pathlib
 import sys
 
-import pandas as pd
-
-
-def validate(path: str | pathlib.Path) -> list[str]:
-    """Validate an OpenArm dataset.
-
-    Args:
-        path: Path to the dataset directory.
-
-    Returns:
-        A list of error messages. An empty list means the dataset is valid.
-
-    """
-    errors = []
-    root = pathlib.Path(path)
-    for qpos_path in sorted(root.rglob("qpos.parquet")):
-        df = pd.read_parquet(qpos_path)
-        if df.isnull().any().any():
-            relative = qpos_path.relative_to(root)
-            errors.append(f"{relative}: qpos.parquet includes null values")
-    return errors
+import openarm_dataset
 
 
 def main():
@@ -50,7 +30,8 @@ def main():
         type=pathlib.Path,
     )
     args = parser.parse_args()
-    errors = validate(args.input)
+    dataset = openarm_dataset.Dataset(args.input)
+    errors = dataset.validate()
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
