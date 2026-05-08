@@ -31,10 +31,7 @@ def main():
     )
     args = parser.parse_args()
     dataset = openarm_dataset.Dataset(args.input)
-    valid = True
-    for error in dataset.validate():
-        print(error, file=sys.stderr)
-        valid = False
+    valid = dataset.validate(on_error=lambda error: print(error, file=sys.stderr))
     if valid:
         print("Dataset is valid.")
     else:

@@ -54,11 +54,13 @@ class Dataset:
         """Set smoothing."""
         self._smoothing_cutoff = cutoff
 
-    def validate(self):
+    def validate(self, on_error=None) -> bool:
         """Validate this dataset.
 
-        Yields:
-            Error messages.
+        Args:
+            on_error: Optional callable that is called with an error message
+                string for each validation error found. If ``None``, errors
+                are not reported.
 
         Returns:
             ``True`` if the dataset is valid, ``False`` otherwise.
@@ -68,8 +70,9 @@ class Dataset:
         for qpos_path in sorted(self.root_path.rglob("qpos.parquet")):
             df = pd.read_parquet(qpos_path)
             if df.isnull().any().any():
-                relative = qpos_path.relative_to(self.root_path)
-                yield f"{relative}: qpos.parquet includes null values"
+                if on_error is not None:
+                    relative = qpos_path.relative_to(self.root_path)
+                    on_error(f"{relative}: qpos.parquet includes null values")
                 valid = False
         return valid
 
