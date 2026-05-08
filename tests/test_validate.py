@@ -24,29 +24,23 @@ DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.2.0"
 
 
 def test_validate_valid_dataset():
-    errors = list(Dataset(DATASET_DIR).validate())
-    assert errors == []
+    assert Dataset(DATASET_DIR).validate() is True
 
 
 def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     import shutil
 
     shutil.copy(DATASET_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
-    # Copy a valid qpos.parquet and inject a null value
     src = DATASET_DIR / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
     dest_dir = tmp_path / "episodes" / "0" / "obs" / "arms" / "left"
     dest_dir.mkdir(parents=True)
     df = pd.read_parquet(src)
-    # Inject a null into the value column
     values = df["value"].tolist()
     values[0] = None
     df["value"] = values
     df.to_parquet(dest_dir / "qpos.parquet")
 
-    errors = list(Dataset(tmp_path).validate())
-    assert len(errors) == 1
-    assert "qpos.parquet" in errors[0]
-    assert "null" in errors[0]
+    assert Dataset(tmp_path).validate() is False
 
 
 def test_validate_multiple_invalid_qpos(tmp_path):
@@ -64,8 +58,7 @@ def test_validate_multiple_invalid_qpos(tmp_path):
         df["value"] = values
         df.to_parquet(dest_dir / "qpos.parquet")
 
-    errors = list(Dataset(tmp_path).validate())
-    assert len(errors) == 2
+    assert Dataset(tmp_path).validate() is False
 
 
 def test_validate_cli_valid_dataset():
