@@ -44,7 +44,9 @@ IMAGE_STATS_MAX_SIZE_THRESHOLD = 300
 def _estimate_num_image_samples(n: int) -> int:
     if n < IMAGE_STATS_MIN_SAMPLES:
         return n
-    return max(IMAGE_STATS_MIN_SAMPLES,min(int(n**IMAGE_STATS_POWER), IMAGE_STATS_MAX_SAMPLES))
+    return max(
+        IMAGE_STATS_MIN_SAMPLES, min(int(n**IMAGE_STATS_POWER), IMAGE_STATS_MAX_SAMPLES)
+    )
 
 
 def _sample_image_indices(n: int) -> list[int]:
@@ -251,7 +253,7 @@ def _describe_scalar(x):
 def _describe_images(image_paths: list[Path]):
     """Compute per-channel min/max/mean/std for RGB images.
 
-    subsampling: pick frames at evenly-spaced indices (count = max(100, min(N**0.75, 10_000))), then for each
+    subsampling: pick frames at evenly-spaced indices, then for each
     chosen frame integer-stride down to ~150 px on the long side when ≥300 px.
     """
     ch_min = np.full(3, np.inf, dtype=np.float64)
