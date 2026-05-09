@@ -17,20 +17,48 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from PIL import Image
 from openarm_dataset import Dataset
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
-DATASET_0_2_0_PATH = FIXTURE_DIR / "dataset_0.2.0"
+DATASET_0_3_0_PATH = FIXTURE_DIR / "dataset_0.3.0"
 FPS = 30
+ATOL = 1e-6
 
 
 @pytest.fixture
 def lerobot_v21_setup(tmp_path):
-    dataset = Dataset(DATASET_0_2_0_PATH)
+    dataset = Dataset(DATASET_0_3_0_PATH)
     dataset.set_smoothing(1.0)
     dataset.write(tmp_path, format="lerobot_v2.1", fps=FPS, train_split=0.8)
     return dataset, tmp_path
+
+
+def _numpy_image_stats(paths: list[Path]) -> dict:
+    """Reference per-channel stats over RGB pixels, normalized to [0, 1].
+
+    Population std (ddof=0) matches `_describe_images`'s `sumsq/N - mean^2`.
+    """
+    pixels = np.concatenate(
+        [
+            np.asarray(Image.open(p).convert("RGB"), dtype=np.float64).reshape(-1, 3)
+            for p in paths
+        ],
+        axis=0,
+    )
+    return {
+        "min": pixels.min(axis=0) / 255.0,
+        "max": pixels.max(axis=0) / 255.0,
+        "mean": pixels.mean(axis=0) / 255.0,
+        "std": pixels.std(axis=0, ddof=0) / 255.0,
+        "count": len(paths),
+    }
+
+
+def _flatten_channels(stats_field) -> np.ndarray:
+    """Convert `[[[r]], [[g]], [[b]]]` into shape-(3,) array."""
+    return np.array([c[0][0] for c in stats_field], dtype=np.float64)
 
 
 def test_metadata(lerobot_v21_setup):
@@ -65,6 +93,37 @@ def test_metadata(lerobot_v21_setup):
     assert episodes_stats_jsonl_path.exists(), (
         "episodes_stats.jsonl file does not exist."
     )
+
+    with episodes_stats_jsonl_path.open() as f:
+        episodes_stats = [json.loads(line) for line in f]
+
+    for ep in episodes_stats:
+        episode_index = ep["episode_index"]
+        samples = dataset.sample(hz=FPS, episode_index=episode_index)
+
+        for cam in dataset.camera_names:
+            key = f"observation.images.{cam}"
+            assert key in ep["stats"], (
+                f"episode {episode_index}: missing {key} in episodes_stats"
+            )
+
+            paths = [Path(s.cameras[cam].path) for s in samples]
+            saved = ep["stats"][key]
+            expected = _numpy_image_stats(paths)
+
+            for stat_key in ("min", "max", "mean", "std"):
+                np.testing.assert_allclose(
+                    _flatten_channels(saved[stat_key]),
+                    expected[stat_key],
+                    atol=ATOL,
+                    err_msg=(
+                        f"episode {episode_index}, camera {cam}: "
+                        f"saved {stat_key} differs from numpy ground truth"
+                    ),
+                )
+            assert saved["count"] == [len(paths)], (
+                f"episode {episode_index}, camera {cam}: count mismatch"
+            )
     with open(episodes_stats_jsonl_path) as f:
         episodes_stats = [json.loads(line) for line in f]
     assert len(episodes_stats) == dataset.meta.num_episodes, (
