@@ -301,7 +301,6 @@ def _calc_episode_stats(
         np.full(length, task_index, dtype=np.int64)
     )
     for cam_key, cam_paths in cameras.items():
-        print(f"Calculating image stats for episode {out_idx}, camera {cam_key}...")
         stats["stats"][_get_image_name_from_key(cam_key)] = _describe_images(cam_paths)
     return stats
 
@@ -366,7 +365,13 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     last_frame_index_all = []
 
     gidx = 0
-    for episode_index, num_frames, sampled_obs, sampled_actions, sampled_cameras in records:
+    for (
+        episode_index,
+        num_frames,
+        sampled_obs,
+        sampled_actions,
+        sampled_cameras,
+    ) in records:
         # save for overall stats
         all_actions.append(sampled_actions)
         all_observations.append(sampled_obs)
