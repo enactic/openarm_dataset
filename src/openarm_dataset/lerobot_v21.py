@@ -23,7 +23,7 @@ import json
 import shutil
 
 from .dataset import Dataset
-from PIL import Image, ImageStat
+from PIL import Image
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -32,6 +32,26 @@ CHUNK_SIZE = 1000
 FFMPEG_CODEC = "libx264"
 VIDEO_PIX_FMT = "yuv420p"
 VIDEO_CODEC = "h264"
+
+# config for image-stats subsampling (mirrors from huggingface/lerobot compute_stats.py)
+IMAGE_STATS_MIN_SAMPLES = 100
+IMAGE_STATS_MAX_SAMPLES = 10_000
+IMAGE_STATS_POWER = 0.75
+IMAGE_STATS_TARGET_SIZE = 150
+IMAGE_STATS_MAX_SIZE_THRESHOLD = 300
+
+
+def _estimate_num_image_samples(n: int) -> int:
+    if n < IMAGE_STATS_MIN_SAMPLES:
+        return n
+    return min(int(n**IMAGE_STATS_POWER), IMAGE_STATS_MAX_SAMPLES)
+
+
+def _sample_image_indices(n: int) -> list[int]:
+    if n <= 0:
+        return []
+    k = _estimate_num_image_samples(n)
+    return np.round(np.linspace(0, n - 1, k)).astype(int).tolist()
 
 
 def _get_joint_names(component, joints):
@@ -229,27 +249,37 @@ def _describe_scalar(x):
 
 
 def _describe_images(image_paths: list[Path]):
-    """Compute per-channel min/max/mean/std for RGB images, streaming over files."""
+    """Compute per-channel min/max/mean/std for RGB images.
+
+    subsampling: pick frames at evenly-spaced indices (count = max(100, min(N**0.75, 10_000))), then for each
+    chosen frame integer-stride down to ~150 px on the long side when ≥300 px.
+    """
     ch_min = np.full(3, np.inf, dtype=np.float64)
     ch_max = np.full(3, -np.inf, dtype=np.float64)
     ch_sum = np.zeros(3, dtype=np.float64)
     ch_sumsq = np.zeros(3, dtype=np.float64)
 
+    sampled_paths = [image_paths[i] for i in _sample_image_indices(len(image_paths))]
+
     total_pixels = 0
-    success_count = 0
-    for path in image_paths:
+    for path in sampled_paths:
         try:
             with Image.open(path) as img:
-                stat = ImageStat.Stat(img.convert("RGB"))
+                arr = np.asarray(img.convert("RGB"))
 
-            extrema = np.asarray(stat.extrema, dtype=np.float64)
-            ch_min = np.minimum(ch_min, extrema[:, 0])
-            ch_max = np.maximum(ch_max, extrema[:, 1])
-            ch_sum += np.asarray(stat.sum, dtype=np.float64)
-            ch_sumsq += np.asarray(stat.sum2, dtype=np.float64)
+            h, w = arr.shape[:2]
+            long_side = max(h, w)
+            if long_side >= IMAGE_STATS_MAX_SIZE_THRESHOLD:
+                factor = max(1, int(long_side / IMAGE_STATS_TARGET_SIZE))
+                arr = arr[::factor, ::factor]
 
-            total_pixels += int(stat.count[0])
-            success_count += 1
+            pixels = arr.reshape(-1, 3).astype(np.float64)
+            ch_min = np.minimum(ch_min, pixels.min(axis=0))
+            ch_max = np.maximum(ch_max, pixels.max(axis=0))
+            ch_sum += pixels.sum(axis=0)
+            ch_sumsq += np.square(pixels).sum(axis=0)
+
+            total_pixels += pixels.shape[0]
 
         except Exception as e:
             print(f"Warning: Failed to read image {path}: {e}")
@@ -269,7 +299,7 @@ def _describe_images(image_paths: list[Path]):
         "max": [[[float(v / scale)]] for v in ch_max],
         "mean": [[[float(v / scale)]] for v in mean],
         "std": [[[float(v / scale)]] for v in std],
-        "count": [success_count],
+        "count": [len(image_paths)],
     }
     return stats
 

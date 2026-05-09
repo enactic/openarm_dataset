@@ -24,7 +24,10 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 FIXTURE_DIR = Path(__file__).parent / "fixture"
 DATASET_0_3_0_PATH = FIXTURE_DIR / "dataset_0.3.0"
 FPS = 30
-ATOL = 1e-6
+# Image stats are subsampled (lerobot-style), so tolerances are loose vs full-pixel truth.
+MEAN_ATOL = 5e-3
+STD_ATOL = 1e-2
+EXTREMA_SLACK = 1e-2
 
 
 @pytest.fixture
@@ -111,16 +114,36 @@ def test_metadata(lerobot_v21_setup):
             saved = ep["stats"][key]
             expected = _numpy_image_stats(paths)
 
-            for stat_key in ("min", "max", "mean", "std"):
-                np.testing.assert_allclose(
-                    _flatten_channels(saved[stat_key]),
-                    expected[stat_key],
-                    atol=ATOL,
-                    err_msg=(
-                        f"episode {episode_index}, camera {cam}: "
-                        f"saved {stat_key} differs from numpy ground truth"
-                    ),
-                )
+            saved_min = _flatten_channels(saved["min"])
+            saved_max = _flatten_channels(saved["max"])
+            saved_mean = _flatten_channels(saved["mean"])
+            saved_std = _flatten_channels(saved["std"])
+
+            np.testing.assert_allclose(
+                saved_mean,
+                expected["mean"],
+                atol=MEAN_ATOL,
+                err_msg=f"episode {episode_index}, camera {cam}: mean differs",
+            )
+            np.testing.assert_allclose(
+                saved_std,
+                expected["std"],
+                atol=STD_ATOL,
+                err_msg=f"episode {episode_index}, camera {cam}: std differs",
+            )
+            # Subsampled min can only be ≥ true min; max can only be ≤ true max.
+            assert (saved_min >= expected["min"] - 1e-9).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled min < true min"
+            )
+            assert (saved_min <= expected["min"] + EXTREMA_SLACK).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled min too far above true min"
+            )
+            assert (saved_max <= expected["max"] + 1e-9).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled max > true max"
+            )
+            assert (saved_max >= expected["max"] - EXTREMA_SLACK).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled max too far below true max"
+            )
             assert saved["count"] == [len(paths)], (
                 f"episode {episode_index}, camera {cam}: count mismatch"
             )
