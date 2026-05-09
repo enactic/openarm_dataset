@@ -33,7 +33,7 @@ FFMPEG_CODEC = "libx264"
 VIDEO_PIX_FMT = "yuv420p"
 VIDEO_CODEC = "h264"
 
-# config for image-stats subsampling (mirrors from huggingface/lerobot compute_stats.py)
+# config for image stats estimation
 IMAGE_STATS_MIN_SAMPLES = 100
 IMAGE_STATS_MAX_SAMPLES = 10_000
 IMAGE_STATS_POWER = 0.75
