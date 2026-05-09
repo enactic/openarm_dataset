@@ -44,7 +44,7 @@ IMAGE_STATS_MAX_SIZE_THRESHOLD = 300
 def _estimate_num_image_samples(n: int) -> int:
     if n < IMAGE_STATS_MIN_SAMPLES:
         return n
-    return min(int(n**IMAGE_STATS_POWER), IMAGE_STATS_MAX_SAMPLES)
+    return max(IMAGE_STATS_MIN_SAMPLES,min(int(n**IMAGE_STATS_POWER), IMAGE_STATS_MAX_SAMPLES))
 
 
 def _sample_image_indices(n: int) -> list[int]:
