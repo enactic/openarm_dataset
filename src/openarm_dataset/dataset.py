@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import shutil
 
+import pyarrow.parquet as pq
 import pandas as pd
 import scipy.signal as signal
 
@@ -53,6 +54,57 @@ class Dataset:
     def set_smoothing(self, cutoff: float):
         """Set smoothing."""
         self._smoothing_cutoff = cutoff
+
+    def validate(self, on_error=None) -> bool:
+        """Validate this dataset.
+
+        Args:
+            on_error: Optional callable that is called with an error message
+                string for each validation error found. If ``None``, errors
+                are not reported.
+
+        Returns:
+            ``True`` if the dataset is valid, ``False`` otherwise.
+
+        """
+        valid = True
+        checked_paths = set()
+        for episode_index in range(self.num_episodes):
+            for type_name in ("obs", "action"):
+                for attribute in self._get_embodiment_attributes(
+                    type_name, episode_index
+                ):
+                    path = attribute["path"]
+                    if path in checked_paths or not path.exists():
+                        continue
+                    checked_paths.add(path)
+                    file_meta = pq.read_metadata(path)
+                    has_null = False
+                    for rg_index in range(file_meta.num_row_groups):
+                        row_group = file_meta.row_group(rg_index)
+                        for col_index in range(row_group.num_columns):
+                            col_meta = row_group.column(col_index)
+                            col_name = col_meta.path_in_schema.split(".")[0]
+                            if col_name == "timestamp":
+                                continue
+                            stats = col_meta.statistics
+                            if (
+                                stats is not None
+                                and stats.has_null_count
+                                and stats.null_count > 0
+                            ):
+                                has_null = True
+                                break
+                        if has_null:
+                            break
+                    if has_null:
+                        if on_error is not None:
+                            on_error(
+                                f"{path.relative_to(self.root_path)}: "
+                                "includes null values"
+                            )
+                        valid = False
+        return valid
 
     @property
     def num_episodes(self) -> int:

@@ -17,17 +17,23 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from PIL import Image
 from openarm_dataset import Dataset
+from openarm_dataset.lerobot_v21 import _sample_image_indices
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
-DATASET_0_2_0_PATH = FIXTURE_DIR / "dataset_0.2.0"
+DATASET_0_3_0_PATH = FIXTURE_DIR / "dataset_0.3.0"
 FPS = 30
+# Image stats are subsampled (lerobot-style), so tolerances are loose vs full-pixel truth.
+MEAN_ATOL = 5e-3
+STD_ATOL = 1e-2
+EXTREMA_SLACK = 1e-2
 
 
 @pytest.fixture
 def lerobot_v21_setup(tmp_path):
-    dataset = Dataset(DATASET_0_2_0_PATH)
+    dataset = Dataset(DATASET_0_3_0_PATH)
     dataset.set_smoothing(1.0)
     dataset.write(
         tmp_path,
@@ -38,6 +44,32 @@ def lerobot_v21_setup(tmp_path):
         overwrite=True,
     )
     return dataset, tmp_path
+
+
+def _numpy_image_stats(paths: list[Path]) -> dict:
+    """Reference per-channel stats over RGB pixels, normalized to [0, 1].
+
+    Population std (ddof=0) matches `_describe_images`'s `sumsq/N - mean^2`.
+    """
+    arrays = []
+    for p in paths:
+        with Image.open(p) as img:
+            arrays.append(
+                np.asarray(img.convert("RGB"), dtype=np.float64).reshape(-1, 3)
+            )
+    pixels = np.concatenate(arrays, axis=0)
+    return {
+        "min": pixels.min(axis=0) / 255.0,
+        "max": pixels.max(axis=0) / 255.0,
+        "mean": pixels.mean(axis=0) / 255.0,
+        "std": pixels.std(axis=0, ddof=0) / 255.0,
+        "count": len(_sample_image_indices(len(paths))),
+    }
+
+
+def _flatten_channels(stats_field) -> np.ndarray:
+    """Convert `[[[r]], [[g]], [[b]]]` into shape-(3,) array."""
+    return np.array([c[0][0] for c in stats_field], dtype=np.float64)
 
 
 def test_metadata(lerobot_v21_setup):
@@ -72,8 +104,57 @@ def test_metadata(lerobot_v21_setup):
     assert episodes_stats_jsonl_path.exists(), (
         "episodes_stats.jsonl file does not exist."
     )
-    with open(episodes_stats_jsonl_path) as f:
+
+    with episodes_stats_jsonl_path.open() as f:
         episodes_stats = [json.loads(line) for line in f]
+
+    for ep in episodes_stats:
+        episode_index = ep["episode_index"]
+        samples = dataset.sample(hz=FPS, episode_index=episode_index)
+
+        for cam in dataset.camera_names:
+            key = f"observation.images.{cam}"
+            assert key in ep["stats"], (
+                f"episode {episode_index}: missing {key} in episodes_stats"
+            )
+
+            paths = [Path(s.cameras[cam].path) for s in samples]
+            saved = ep["stats"][key]
+            expected = _numpy_image_stats(paths)
+
+            saved_min = _flatten_channels(saved["min"])
+            saved_max = _flatten_channels(saved["max"])
+            saved_mean = _flatten_channels(saved["mean"])
+            saved_std = _flatten_channels(saved["std"])
+
+            np.testing.assert_allclose(
+                saved_mean,
+                expected["mean"],
+                atol=MEAN_ATOL,
+                err_msg=f"episode {episode_index}, camera {cam}: mean differs",
+            )
+            np.testing.assert_allclose(
+                saved_std,
+                expected["std"],
+                atol=STD_ATOL,
+                err_msg=f"episode {episode_index}, camera {cam}: std differs",
+            )
+            # Subsampled min can only be ≥ true min; max can only be ≤ true max.
+            assert (saved_min >= expected["min"] - 1e-9).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled min < true min"
+            )
+            assert (saved_min <= expected["min"] + EXTREMA_SLACK).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled min too far above true min"
+            )
+            assert (saved_max <= expected["max"] + 1e-9).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled max > true max"
+            )
+            assert (saved_max >= expected["max"] - EXTREMA_SLACK).all(), (
+                f"episode {episode_index}, camera {cam}: subsampled max too far below true max"
+            )
+            assert saved["count"] == [len(_sample_image_indices(len(paths)))], (
+                f"episode {episode_index}, camera {cam}: count mismatch"
+            )
     assert len(episodes_stats) == dataset.meta.num_episodes, (
         "Number of episodes info in episodes_stats.jsonl does not match the original dataset."
     )

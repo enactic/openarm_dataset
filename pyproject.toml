@@ -40,6 +40,7 @@ Repository = "https://github.com/enactic/openarm_dataset.git"
 
 [project.scripts]
 openarm-dataset-convert = "openarm_dataset.convert:main"
+openarm-dataset-validate = "openarm_dataset.validate:main"
 
 [dependency-groups]
 dev = [
