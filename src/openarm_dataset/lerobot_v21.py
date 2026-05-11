@@ -265,26 +265,22 @@ def _describe_images(image_paths: list[Path]):
 
     total_pixels = 0
     for path in sampled_paths:
-        try:
-            with Image.open(path) as img:
-                arr = np.asarray(img.convert("RGB"))
+        with Image.open(path) as img:
+            arr = np.asarray(img.convert("RGB"))
 
-            h, w = arr.shape[:2]
-            long_side = max(h, w)
-            if long_side >= IMAGE_STATS_MAX_SIZE_THRESHOLD:
-                factor = max(1, int(long_side / IMAGE_STATS_TARGET_SIZE))
-                arr = arr[::factor, ::factor]
+        h, w = arr.shape[:2]
+        long_side = max(h, w)
+        if long_side >= IMAGE_STATS_MAX_SIZE_THRESHOLD:
+            factor = max(1, int(long_side / IMAGE_STATS_TARGET_SIZE))
+            arr = arr[::factor, ::factor]
 
-            pixels = arr.reshape(-1, 3).astype(np.float64)
-            ch_min = np.minimum(ch_min, pixels.min(axis=0))
-            ch_max = np.maximum(ch_max, pixels.max(axis=0))
-            ch_sum += pixels.sum(axis=0)
-            ch_sumsq += np.square(pixels).sum(axis=0)
+        pixels = arr.reshape(-1, 3).astype(np.float64)
+        ch_min = np.minimum(ch_min, pixels.min(axis=0))
+        ch_max = np.maximum(ch_max, pixels.max(axis=0))
+        ch_sum += pixels.sum(axis=0)
+        ch_sumsq += np.square(pixels).sum(axis=0)
 
-            total_pixels += pixels.shape[0]
-
-        except Exception as e:
-            print(f"Warning: Failed to read image {path}: {e}")
+        total_pixels += pixels.shape[0]
 
     if total_pixels == 0:
         raise ValueError("No valid images were loaded.")
