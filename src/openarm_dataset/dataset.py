@@ -18,8 +18,6 @@ import os
 from pathlib import Path
 import shutil
 
-import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pandas as pd
 import scipy.signal as signal
@@ -80,21 +78,25 @@ class Dataset:
                     if path in checked_paths or not path.exists():
                         continue
                     checked_paths.add(path)
-                    arrow_table = pq.read_table(path)
+                    file_meta = pq.read_metadata(path)
                     has_null = False
-                    for name in arrow_table.schema.names:
-                        if name == "timestamp":
-                            continue
-                        col = arrow_table.column(name)
-                        if pc.any(pc.is_null(col)).as_py():
-                            has_null = True
-                            break
-                        if pa.types.is_list(col.type) or pa.types.is_large_list(
-                            col.type
-                        ):
-                            if pc.any(pc.is_null(pc.list_flatten(col))).as_py():
+                    for rg_index in range(file_meta.num_row_groups):
+                        row_group = file_meta.row_group(rg_index)
+                        for col_index in range(row_group.num_columns):
+                            col_meta = row_group.column(col_index)
+                            col_name = col_meta.path_in_schema.split(".")[0]
+                            if col_name == "timestamp":
+                                continue
+                            stats = col_meta.statistics
+                            if (
+                                stats is not None
+                                and stats.has_null_count
+                                and stats.null_count > 0
+                            ):
                                 has_null = True
                                 break
+                        if has_null:
+                            break
                     if has_null:
                         if on_error is not None:
                             on_error(
