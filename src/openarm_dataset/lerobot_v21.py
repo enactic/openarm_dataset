@@ -340,9 +340,13 @@ def _calc_episode_stats(
 
 def _write_parquet(dataset, records, output_dir, fps):
     gidx = 0
-    for out_idx, (episode_index, num_frames, sampled_obs, sampled_actions, _) in enumerate(
-        records
-    ):
+    for out_idx, (
+        episode_index,
+        num_frames,
+        sampled_obs,
+        sampled_actions,
+        _,
+    ) in enumerate(records):
         task_index = int(dataset.meta.episodes[episode_index]["task_index"])
         success = bool(dataset.meta.episodes[episode_index]["success"])
         t_cam = np.arange(num_frames, dtype=np.float64) / float(fps)
@@ -360,7 +364,10 @@ def _write_parquet(dataset, records, output_dir, fps):
             }
         )
         parquet_path = (
-            output_dir / "data" / _get_chunk_name(out_idx) / f"episode_{out_idx:06d}.parquet"
+            output_dir
+            / "data"
+            / _get_chunk_name(out_idx)
+            / f"episode_{out_idx:06d}.parquet"
         )
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(parquet_path, index=False)
@@ -397,13 +404,13 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     last_frame_index_all = []
 
     gidx = 0
-    for (
+    for out_idx, (
         episode_index,
         num_frames,
         sampled_obs,
         sampled_actions,
         sampled_cameras,
-    ) in records:
+    ) in enumerate(records):
         # save for overall stats
         all_actions.append(sampled_actions)
         all_observations.append(sampled_obs)
