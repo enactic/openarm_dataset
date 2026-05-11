@@ -23,6 +23,7 @@ import json
 import shutil
 
 from .dataset import Dataset
+from PIL import Image
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -31,6 +32,28 @@ CHUNK_SIZE = 1000
 FFMPEG_CODEC = "libx264"
 VIDEO_PIX_FMT = "yuv420p"
 VIDEO_CODEC = "h264"
+
+# config for image stats estimation
+IMAGE_STATS_MIN_SAMPLES = 100
+IMAGE_STATS_MAX_SAMPLES = 10_000
+IMAGE_STATS_POWER = 0.75
+IMAGE_STATS_TARGET_SIZE = 150
+IMAGE_STATS_MAX_SIZE_THRESHOLD = 300
+
+
+def _estimate_num_image_samples(n: int) -> int:
+    if n < IMAGE_STATS_MIN_SAMPLES:
+        return n
+    return max(
+        IMAGE_STATS_MIN_SAMPLES, min(int(n**IMAGE_STATS_POWER), IMAGE_STATS_MAX_SAMPLES)
+    )
+
+
+def _sample_image_indices(n: int) -> list[int]:
+    if n <= 0:
+        return []
+    k = _estimate_num_image_samples(n)
+    return np.round(np.linspace(0, n - 1, k)).astype(int).tolist()
 
 
 def _get_joint_names(component, joints):
@@ -227,6 +250,58 @@ def _describe_scalar(x):
     return result
 
 
+def _describe_images(image_paths: list[Path]):
+    """Compute per-channel min/max/mean/std for RGB images.
+
+    subsampling: pick frames at evenly-spaced indices, then for each
+    chosen frame integer-stride down to ~150 px on the long side when ≥300 px.
+    """
+    ch_min = np.full(3, np.inf, dtype=np.float64)
+    ch_max = np.full(3, -np.inf, dtype=np.float64)
+    ch_sum = np.zeros(3, dtype=np.float64)
+    ch_sumsq = np.zeros(3, dtype=np.float64)
+
+    sampled_paths = [image_paths[i] for i in _sample_image_indices(len(image_paths))]
+
+    total_pixels = 0
+    for path in sampled_paths:
+        with Image.open(path) as img:
+            arr = np.asarray(img.convert("RGB"))
+
+        h, w = arr.shape[:2]
+        long_side = max(h, w)
+        if long_side >= IMAGE_STATS_MAX_SIZE_THRESHOLD:
+            factor = max(1, int(long_side / IMAGE_STATS_TARGET_SIZE))
+            arr = arr[::factor, ::factor]
+
+        pixels = arr.reshape(-1, 3).astype(np.float64)
+        ch_min = np.minimum(ch_min, pixels.min(axis=0))
+        ch_max = np.maximum(ch_max, pixels.max(axis=0))
+        ch_sum += pixels.sum(axis=0)
+        ch_sumsq += np.square(pixels).sum(axis=0)
+
+        total_pixels += pixels.shape[0]
+
+    if total_pixels == 0:
+        raise ValueError("No valid images were loaded.")
+
+    mean = ch_sum / total_pixels
+    var = ch_sumsq / total_pixels - np.square(mean)
+    var = np.maximum(var, 0.0)  # clip negative variance to zero
+    std = np.sqrt(var)
+
+    # [0, 255] -> [0, 1]
+    scale = 255.0
+    stats = {
+        "min": [[[float(v / scale)]] for v in ch_min],
+        "max": [[[float(v / scale)]] for v in ch_max],
+        "mean": [[[float(v / scale)]] for v in mean],
+        "std": [[[float(v / scale)]] for v in std],
+        "count": [len(sampled_paths)],
+    }
+    return stats
+
+
 def _calc_episode_stats(
     sampled_obs, sampled_actions, out_idx: int, gidx: int, task_index, fps: int, cameras
 ) -> dict:
@@ -253,6 +328,8 @@ def _calc_episode_stats(
     stats["stats"]["task_index"] = _describe_scalar(
         np.full(length, task_index, dtype=np.int64)
     )
+    for cam_key, cam_paths in cameras.items():
+        stats["stats"][_get_image_name_from_key(cam_key)] = _describe_images(cam_paths)
     return stats
 
 
@@ -316,7 +393,13 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     last_frame_index_all = []
 
     gidx = 0
-    for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
+    for (
+        episode_index,
+        num_frames,
+        sampled_obs,
+        sampled_actions,
+        sampled_cameras,
+    ) in records:
         # save for overall stats
         all_actions.append(sampled_actions)
         all_observations.append(sampled_obs)
@@ -357,7 +440,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
             gidx,
             task_index,
             fps,
-            dataset.camera_names,
+            sampled_cameras,
         )
         episodes_stats.append(stats)
         gidx += len(sampled_obs)
