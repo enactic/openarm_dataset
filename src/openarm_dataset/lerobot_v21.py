@@ -57,9 +57,14 @@ def _collect_keys_and_joint_names(dataset: Dataset):
     return keys, joint_names
 
 
-def _collect_downsampled_data(dataset: Dataset, fps: int, joint_keys):
+def _collect_downsampled_data(
+    dataset: Dataset, fps: int, joint_keys, success_only=False
+):
     records = []
     for episode_index in range(dataset.meta.num_episodes):
+        success = bool(dataset.meta.episodes[episode_index]["success"])
+        if not success and success_only:
+            continue
         samples = dataset.sample(hz=fps, episode_index=episode_index)
         num_frames = len(samples)
         sampled_obs = [
@@ -258,7 +263,9 @@ def _calc_episode_stats(
 
 def _write_parquet(dataset, records, output_dir, fps):
     gidx = 0
-    for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
+    for out_idx, (episode_index, num_frames, sampled_obs, sampled_actions, _) in enumerate(
+        records
+    ):
         task_index = int(dataset.meta.episodes[episode_index]["task_index"])
         success = bool(dataset.meta.episodes[episode_index]["success"])
         t_cam = np.arange(num_frames, dtype=np.float64) / float(fps)
@@ -268,7 +275,7 @@ def _write_parquet(dataset, records, output_dir, fps):
                 "observation.state": sampled_obs,
                 "timestamp": t_cam.astype(np.float64),
                 "frame_index": np.arange(num_frames, dtype=np.int64),
-                "episode_index": np.full(num_frames, episode_index, dtype=np.int64),
+                "episode_index": np.full(num_frames, out_idx, dtype=np.int64),
                 "index": np.arange(gidx, gidx + num_frames, dtype=np.int64),
                 "task_index": np.full(num_frames, task_index, dtype=np.int64),
                 "success": np.full(num_frames, success, dtype=np.int64),
@@ -276,10 +283,7 @@ def _write_parquet(dataset, records, output_dir, fps):
             }
         )
         parquet_path = (
-            output_dir
-            / "data"
-            / _get_chunk_name(episode_index)
-            / f"episode_{episode_index:06d}.parquet"
+            output_dir / "data" / _get_chunk_name(out_idx) / f"episode_{out_idx:06d}.parquet"
         )
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(parquet_path, index=False)
@@ -287,14 +291,14 @@ def _write_parquet(dataset, records, output_dir, fps):
 
 
 def _write_videos(dataset, records, output_dir, fps):
-    for episode_index, _, _, _, sampled_cameras in records:
+    for out_idx, (_, _, _, _, sampled_cameras) in enumerate(records):
         for camera_key in dataset.camera_names:
             video_path = (
                 output_dir
                 / "videos"
-                / _get_chunk_name(episode_index)
+                / _get_chunk_name(out_idx)
                 / _get_image_name_from_key(camera_key)
-                / f"episode_{episode_index:06d}.mp4"
+                / f"episode_{out_idx:06d}.mp4"
             )
             video_path.parent.mkdir(parents=True, exist_ok=True)
             _encode_mp4(sampled_cameras[camera_key], fps, video_path)
@@ -316,13 +320,19 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     last_frame_index_all = []
 
     gidx = 0
-    for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
+    for out_idx, (
+        episode_index,
+        num_frames,
+        sampled_obs,
+        sampled_actions,
+        _,
+    ) in enumerate(records):
         # save for overall stats
         all_actions.append(sampled_actions)
         all_observations.append(sampled_obs)
         timestamp_all.append(np.arange(num_frames, dtype=np.float64) / float(fps))
         frame_index_all.append(np.arange(num_frames, dtype=np.int64))
-        episode_index_all.append(np.full(num_frames, episode_index, dtype=np.int64))
+        episode_index_all.append(np.full(num_frames, out_idx, dtype=np.int64))
         task_index_all.append(
             np.full(
                 num_frames,
@@ -344,7 +354,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         task_index = int(dataset.meta.episodes[episode_index]["task_index"])
         task_name = dataset.meta.data["tasks"][task_index]["prompt"]
         rec = {
-            "episode_index": episode_index,
+            "episode_index": out_idx,
             "tasks": [task_name],
             "length": len(sampled_obs),
         }
@@ -353,7 +363,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         stats = _calc_episode_stats(
             sampled_obs,
             sampled_actions,
-            episode_index,
+            out_idx,
             gidx,
             task_index,
             fps,
@@ -490,7 +500,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
                 "has_audio": False,
             },
         }
-    num_episodes = len(dataset.meta.episodes)
+    num_episodes = len(records)
     total_chunks = max((num_episodes - 1) // CHUNK_SIZE + 1, 0) if num_episodes else 0
     train_end = int(num_episodes * train_split)
     splits = {"train": f"0:{train_end}"}
@@ -522,12 +532,20 @@ def to_lerobotv21(
     fps: int = 30,
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
+    success_only: bool = False,
+    overwrite: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory."""
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
     if fps <= 0:
         raise ValueError(f"fps must be a positive integer, got {fps}")
+    if Path(output_dir).exists() and not overwrite:
+        raise FileExistsError(
+            f"Output directory {output_dir} already exists. Please specify a non-existing directory to avoid overwriting."
+        )
+    elif Path(output_dir).exists() and overwrite:
+        shutil.rmtree(output_dir)
 
     # set smoothing cutoff
     dataset.set_smoothing(cutoff=smoothing_cutoff)
@@ -538,7 +556,7 @@ def to_lerobotv21(
     joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
 
     # collect downsampled data for each episode
-    records = _collect_downsampled_data(dataset, fps, joint_keys)
+    records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
 
     # save parquet files for each episode (output_dir/data)
     _write_parquet(dataset, records, output_dir, fps)

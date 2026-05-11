@@ -29,7 +29,14 @@ FPS = 30
 def lerobot_v21_setup(tmp_path):
     dataset = Dataset(DATASET_0_2_0_PATH)
     dataset.set_smoothing(1.0)
-    dataset.write(tmp_path, format="lerobot_v2.1", fps=FPS, train_split=0.8)
+    dataset.write(
+        tmp_path,
+        format="lerobot_v2.1",
+        fps=FPS,
+        train_split=0.8,
+        success_only=False,
+        overwrite=True,
+    )
     return dataset, tmp_path
 
 
@@ -136,4 +143,51 @@ def test_load(lerobot_v21_setup):
     # check tasks
     assert len(lerobot_dataset.meta.tasks) == len(dataset.meta.tasks), (
         "Number of tasks in LeRobotDataset does not match the original dataset."
+    )
+
+
+def test_success_only(tmp_path):
+    dataset = Dataset(DATASET_0_2_0_PATH)
+    dataset.set_smoothing(1.0)
+    lerobot_path = tmp_path / "lerobot_v2.1_success_only"
+    dataset.write(
+        lerobot_path, format="lerobot_v2.1", fps=FPS, train_split=0.8, success_only=True
+    )
+
+    # check metadata
+    with open(lerobot_path / "meta" / "episodes_stats.jsonl") as f:
+        episodes_stats = [json.loads(line) for line in f]
+    assert len(episodes_stats) == 1  # only id:3 is success
+
+    with open(lerobot_path / "meta" / "episodes.jsonl") as f:
+        episodes = [json.loads(line) for line in f]
+    assert len(episodes) == 1  # only id:3 is success
+
+    # check data
+    data_path = lerobot_path / "data" / "chunk-000" / "episode_000000.parquet"
+    assert data_path.exists(), "Data file does not exist."
+
+    df = pd.read_parquet(data_path)
+
+    sample_episode = dataset.sample(
+        30, episode_index=1
+    )  # episode_index 1 (id:3) is the only success episode
+    sample_episode_0_action = sample_episode[0].action
+    sample_0_action = np.concatenate(
+        [
+            sample_episode_0_action["arms/right/qpos"],
+            sample_episode_0_action["arms/left/qpos"],
+        ]
+    )
+    lerobot_action = df["action"].iloc[0]
+
+    assert all(
+        abs(lerobot_action[i] - sample_0_action[i]) < 1e-6
+        for i in range(len(sample_0_action))
+    ), "Action values in data file do not match the original dataset."
+
+    ##load with LeRobotDataset and check num episodes
+    lerobot_dataset = LeRobotDataset(repo_id="test/data", root=lerobot_path)
+    assert lerobot_dataset.num_episodes == 1, (
+        "Number of episodes in LeRobotDataset does not match the expected number of success episodes."
     )
