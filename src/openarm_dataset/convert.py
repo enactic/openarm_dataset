@@ -61,12 +61,7 @@ def main():
         action="store_true",
         default=False,
     )
-    parser.add_argument(
-        "--overwrite",
-        help="Overwrite the output dataset if it already exists (default: False) if the output format is lerobot_v2.1",
-        action="store_true",
-        default=False,
-    )
+
     args = parser.parse_args()
     write_kwargs = {"format": args.format}
     if args.format == "lerobot_v2.1":
@@ -74,7 +69,6 @@ def main():
         write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
         write_kwargs["train_split"] = args.train_split
         write_kwargs["success_only"] = args.success_only
-        write_kwargs["overwrite"] = args.overwrite
 
     old_dataset = openarm_dataset.Dataset(args.input)
     old_dataset.write(args.output, **write_kwargs)

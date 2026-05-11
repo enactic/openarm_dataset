@@ -41,7 +41,6 @@ def lerobot_v21_setup(tmp_path):
         fps=FPS,
         train_split=0.8,
         success_only=False,
-        overwrite=True,
     )
     return dataset, tmp_path
 
@@ -230,7 +229,7 @@ def test_load(lerobot_v21_setup):
 def test_success_only(tmp_path):
     dataset = Dataset(DATASET_0_3_0_PATH)
     dataset.set_smoothing(1.0)
-    lerobot_path = tmp_path / "lerobot_v2.1_success_only"
+    lerobot_path = tmp_path / "success_only" / "lerobot_v2.1_success_only"
     dataset.write(
         lerobot_path, format="lerobot_v2.1", fps=FPS, train_split=0.8, success_only=True
     )

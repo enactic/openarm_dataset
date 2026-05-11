@@ -41,36 +41,6 @@ IMAGE_STATS_TARGET_SIZE = 150
 IMAGE_STATS_MAX_SIZE_THRESHOLD = 300
 
 
-def _validate_output_dir(output_path: Path, overwrite: bool):
-    if output_path.exists():
-        if not overwrite:
-            # if the output directory already exists and overwrite is False, raise an error to avoid accidental data loss
-            raise FileExistsError(
-                f"Output directory {output_path} already exists. Please specify a non-existing directory to avoid overwriting."
-            )
-        if not output_path.is_dir():
-            raise FileExistsError(
-                f"Output path {output_path} exists but is not a directory. Please specify a non-existing path or a directory to avoid overwriting unrelated files."
-            )
-        if not any(output_path.iterdir()):
-            # the output directory exists but is empty, so we can safely use it without clearing
-            return
-
-        data_dir = output_path / "data"
-        videos_dir = output_path / "videos"
-        meta_dir = output_path / "meta"
-        if data_dir.exists() or videos_dir.exists() or meta_dir.exists():
-            # at least one of the expected subdirectories exists (or the dir is empty), so we can be reasonably sure this is an existing output dir and safe to clear
-            shutil.rmtree(data_dir, ignore_errors=True)
-            shutil.rmtree(videos_dir, ignore_errors=True)
-            shutil.rmtree(meta_dir, ignore_errors=True)
-        else:
-            # the output directory exists but does not contain expected subdirectories, so we should not clear it to avoid accidental deletion of unrelated files
-            raise FileExistsError(
-                f"Output directory {output_path} already exists but does not contain expected 'data' , 'videos' or 'meta' subdirectories. Please specify a non-existing directory or remove/backup the existing directory to avoid accidental deletion of unrelated files."
-            )
-
-
 def _estimate_num_image_samples(n: int) -> int:
     if n < IMAGE_STATS_MIN_SAMPLES:
         return n
@@ -684,7 +654,6 @@ def to_lerobotv21(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
-    overwrite: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory."""
     if not (0.0 <= train_split <= 1.0):
@@ -692,8 +661,6 @@ def to_lerobotv21(
 
     if fps <= 0:
         raise ValueError(f"fps must be a positive integer, got {fps}")
-
-    _validate_output_dir(Path(output_dir), overwrite)
 
     # set smoothing cutoff
     dataset.set_smoothing(cutoff=smoothing_cutoff)
