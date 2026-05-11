@@ -301,7 +301,7 @@ def _describe_images(image_paths: list[Path]):
         "max": [[[float(v / scale)]] for v in ch_max],
         "mean": [[[float(v / scale)]] for v in mean],
         "std": [[[float(v / scale)]] for v in std],
-        "count": [len(image_paths)],
+        "count": [len(sampled_paths)],
     }
     return stats
 

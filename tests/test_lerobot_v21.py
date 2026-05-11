@@ -19,6 +19,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 from openarm_dataset import Dataset
+from openarm_dataset.lerobot_v21 import _sample_image_indices
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
@@ -55,7 +56,7 @@ def _numpy_image_stats(paths: list[Path]) -> dict:
         "max": pixels.max(axis=0) / 255.0,
         "mean": pixels.mean(axis=0) / 255.0,
         "std": pixels.std(axis=0, ddof=0) / 255.0,
-        "count": len(paths),
+        "count": len(_sample_image_indices(len(paths))),
     }
 
 
@@ -144,7 +145,7 @@ def test_metadata(lerobot_v21_setup):
             assert (saved_max >= expected["max"] - EXTREMA_SLACK).all(), (
                 f"episode {episode_index}, camera {cam}: subsampled max too far below true max"
             )
-            assert saved["count"] == [len(paths)], (
+            assert saved["count"] == [len(_sample_image_indices(len(paths)))], (
                 f"episode {episode_index}, camera {cam}: count mismatch"
             )
     with open(episodes_stats_jsonl_path) as f:
