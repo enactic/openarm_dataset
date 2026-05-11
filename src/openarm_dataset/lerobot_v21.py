@@ -52,18 +52,14 @@ def _validate_output_dir(output_path: Path, overwrite: bool):
             raise FileExistsError(
                 f"Output path {output_path} exists but is not a directory. Please specify a non-existing path or a directory to avoid overwriting unrelated files."
             )
-        if len(list(output_path.iterdir())) == 0:
+        if not any(output_path.iterdir()):
             # the output directory exists but is empty, so we can safely use it without clearing
-            return 
+            return
 
         data_dir = output_path / "data"
         videos_dir = output_path / "videos"
         meta_dir = output_path / "meta"
-        if (
-            data_dir.exists()
-            or videos_dir.exists()
-            or meta_dir.exists()
-        ):
+        if data_dir.exists() or videos_dir.exists() or meta_dir.exists():
             # at least one of the expected subdirectories exists (or the dir is empty), so we can be reasonably sure this is an existing output dir and safe to clear
             shutil.rmtree(data_dir, ignore_errors=True)
             shutil.rmtree(videos_dir, ignore_errors=True)
@@ -73,6 +69,7 @@ def _validate_output_dir(output_path: Path, overwrite: bool):
             raise FileExistsError(
                 f"Output directory {output_path} already exists but does not contain expected 'data' , 'videos' or 'meta' subdirectories. Please specify a non-existing directory or remove/backup the existing directory to avoid accidental deletion of unrelated files."
             )
+
 
 def _estimate_num_image_samples(n: int) -> int:
     if n < IMAGE_STATS_MIN_SAMPLES:
@@ -695,7 +692,7 @@ def to_lerobotv21(
 
     if fps <= 0:
         raise ValueError(f"fps must be a positive integer, got {fps}")
-    
+
     _validate_output_dir(Path(output_dir), overwrite)
 
     # set smoothing cutoff
