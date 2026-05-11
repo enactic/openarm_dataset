@@ -461,7 +461,9 @@ def _write_metadata(
         all_observations.append(sampled_obs)
         timestamp_all.append(np.arange(num_frames, dtype=np.float64) / float(fps))
         frame_index_all.append(np.arange(num_frames, dtype=np.int64))
-        episode_index_all.append(np.full(num_frames, lerobot_episode_index, dtype=np.int64))
+        episode_index_all.append(
+            np.full(num_frames, lerobot_episode_index, dtype=np.int64)
+        )
         task_index_all.append(np.full(num_frames, lerobot_task_index, dtype=np.int64))
         index_all.append(np.arange(gidx, gidx + num_frames, dtype=np.int64))
         success_all.append(

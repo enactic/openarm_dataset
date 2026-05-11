@@ -41,7 +41,7 @@ def lerobot_v21_setup(tmp_path):
         fps=FPS,
         train_split=0.8,
         success_only=False,
-        overwrite=True
+        overwrite=True,
     )
     return dataset, tmp_path
 
