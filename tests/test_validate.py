@@ -44,6 +44,22 @@ def test_validate_invalid_dataset_with_null_qpos(tmp_path):
     assert errors == ["episodes/0/obs/arms/left/state.parquet: includes null values"]
 
 
+def test_validate_invalid_dataset_with_null_inside_qpos_list(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
+    df = pd.read_parquet(state_path)
+    values = df["qpos"].tolist()
+    first = list(values[0])
+    first[0] = None
+    values[0] = first
+    df["qpos"] = values
+    df.to_parquet(state_path)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == ["episodes/0/obs/arms/left/state.parquet: includes null values"]
+
+
 def test_validate_multiple_invalid_qpos(tmp_path):
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     for side in ("left", "right"):
