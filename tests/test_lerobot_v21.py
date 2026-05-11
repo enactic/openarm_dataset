@@ -44,13 +44,13 @@ def _numpy_image_stats(paths: list[Path]) -> dict:
 
     Population std (ddof=0) matches `_describe_images`'s `sumsq/N - mean^2`.
     """
-    pixels = np.concatenate(
-        [
-            np.asarray(Image.open(p).convert("RGB"), dtype=np.float64).reshape(-1, 3)
-            for p in paths
-        ],
-        axis=0,
-    )
+    arrays = []
+    for p in paths:
+        with Image.open(p) as img:
+            arrays.append(
+                np.asarray(img.convert("RGB"), dtype=np.float64).reshape(-1, 3)
+            )
+    pixels = np.concatenate(arrays, axis=0)
     return {
         "min": pixels.min(axis=0) / 255.0,
         "max": pixels.max(axis=0) / 255.0,
@@ -148,8 +148,6 @@ def test_metadata(lerobot_v21_setup):
             assert saved["count"] == [len(_sample_image_indices(len(paths)))], (
                 f"episode {episode_index}, camera {cam}: count mismatch"
             )
-    with open(episodes_stats_jsonl_path) as f:
-        episodes_stats = [json.loads(line) for line in f]
     assert len(episodes_stats) == dataset.meta.num_episodes, (
         "Number of episodes info in episodes_stats.jsonl does not match the original dataset."
     )

@@ -291,7 +291,7 @@ def _describe_images(image_paths: list[Path]):
 
     mean = ch_sum / total_pixels
     var = ch_sumsq / total_pixels - np.square(mean)
-    var = np.maximum(var, 0.0)  # 数値誤差対策
+    var = np.maximum(var, 0.0)  # clip negative variance to zero
     std = np.sqrt(var)
 
     # [0, 255] -> [0, 1]
