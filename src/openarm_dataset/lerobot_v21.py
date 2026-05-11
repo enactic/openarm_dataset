@@ -113,6 +113,29 @@ def _collect_downsampled_data(
     return records
 
 
+def _build_remaps(dataset: Dataset, records):
+    """Build remapping dicts from original episode/task indices to contiguous indices.
+
+    When records is a filtered subset of episodes (e.g., success_only=True),
+    original indices may be sparse. LeRobot v2.1 expects episode/task indices
+    to be contiguous starting from 0. When records contains all episodes the
+    returned maps are the identity.
+    """
+    remap_episode_index = {original: new for new, (original, *_) in enumerate(records)}
+    seen = set()
+    used_task_indices = []
+    for original_episode_index, *_ in records:
+        original_task_index = int(
+            dataset.meta.episodes[original_episode_index]["task_index"]
+        )
+        if original_task_index not in seen:
+            seen.add(original_task_index)
+            used_task_indices.append(original_task_index)
+    used_task_indices.sort()
+    remap_task_index = {original: new for new, original in enumerate(used_task_indices)}
+    return remap_episode_index, remap_task_index
+
+
 def _get_chunk_name(episode_id: int):
     return f"chunk-{episode_id // CHUNK_SIZE:03d}"
 
@@ -309,14 +332,20 @@ def _describe_images(image_paths: list[Path]):
 
 
 def _calc_episode_stats(
-    sampled_obs, sampled_actions, out_idx: int, gidx: int, task_index, fps: int, cameras
+    sampled_obs,
+    sampled_actions,
+    episode_index: int,
+    gidx: int,
+    task_index,
+    fps: int,
+    cameras,
 ) -> dict:
     length = len(sampled_obs)
     actions = np.vstack(sampled_actions).astype(np.float32)
     observations = np.vstack(sampled_obs).astype(np.float32)
     timestamps = np.arange(length, dtype=np.float64) / float(fps)
     stats = {
-        "episode_index": out_idx,
+        "episode_index": episode_index,
         "dataset_from_index": gidx,
         "dataset_to_index": gidx + length,
         "stats": {},
@@ -326,7 +355,7 @@ def _calc_episode_stats(
     stats["stats"]["timestamp"] = _describe_scalar(timestamps)
     stats["stats"]["frame_index"] = _describe_scalar(np.arange(length, dtype=np.int64))
     stats["stats"]["episode_index"] = _describe_scalar(
-        np.full(length, out_idx, dtype=np.int64)
+        np.full(length, episode_index, dtype=np.int64)
     )
     stats["stats"]["index"] = _describe_scalar(
         np.arange(gidx, gidx + length, dtype=np.int64)
@@ -339,16 +368,15 @@ def _calc_episode_stats(
     return stats
 
 
-def _write_parquet(dataset, records, output_dir, fps):
+def _write_parquet(
+    dataset, records, output_dir, fps, remap_episode_index, remap_task_index
+):
     gidx = 0
-    for out_idx, (
-        episode_index,
-        num_frames,
-        sampled_obs,
-        sampled_actions,
-        _,
-    ) in enumerate(records):
-        task_index = int(dataset.meta.episodes[episode_index]["task_index"])
+    for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
+        lerobot_episode_index = remap_episode_index[episode_index]
+        task_index = remap_task_index[
+            int(dataset.meta.episodes[episode_index]["task_index"])
+        ]
         success = bool(dataset.meta.episodes[episode_index]["success"])
         t_cam = np.arange(num_frames, dtype=np.float64) / float(fps)
         df = pd.DataFrame(
@@ -357,7 +385,9 @@ def _write_parquet(dataset, records, output_dir, fps):
                 "observation.state": sampled_obs,
                 "timestamp": t_cam.astype(np.float64),
                 "frame_index": np.arange(num_frames, dtype=np.int64),
-                "episode_index": np.full(num_frames, out_idx, dtype=np.int64),
+                "episode_index": np.full(
+                    num_frames, lerobot_episode_index, dtype=np.int64
+                ),
                 "index": np.arange(gidx, gidx + num_frames, dtype=np.int64),
                 "task_index": np.full(num_frames, task_index, dtype=np.int64),
                 "success": np.full(num_frames, success, dtype=np.int64),
@@ -367,29 +397,39 @@ def _write_parquet(dataset, records, output_dir, fps):
         parquet_path = (
             output_dir
             / "data"
-            / _get_chunk_name(out_idx)
-            / f"episode_{out_idx:06d}.parquet"
+            / _get_chunk_name(lerobot_episode_index)
+            / f"episode_{lerobot_episode_index:06d}.parquet"
         )
         parquet_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(parquet_path, index=False)
         gidx += num_frames
 
 
-def _write_videos(dataset, records, output_dir, fps):
-    for out_idx, (_, _, _, _, sampled_cameras) in enumerate(records):
+def _write_videos(dataset, records, output_dir, fps, remap_episode_index):
+    for episode_index, _, _, _, sampled_cameras in records:
+        lerobot_episode_index = remap_episode_index[episode_index]
         for camera_key in dataset.camera_names:
             video_path = (
                 output_dir
                 / "videos"
-                / _get_chunk_name(out_idx)
+                / _get_chunk_name(lerobot_episode_index)
                 / _get_image_name_from_key(camera_key)
-                / f"episode_{out_idx:06d}.mp4"
+                / f"episode_{lerobot_episode_index:06d}.mp4"
             )
             video_path.parent.mkdir(parents=True, exist_ok=True)
             _encode_mp4(sampled_cameras[camera_key], fps, video_path)
 
 
-def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names):
+def _write_metadata(
+    dataset,
+    records,
+    output_dir,
+    fps,
+    train_split,
+    joint_names,
+    remap_episode_index,
+    remap_task_index,
+):
     METADATA_DIR = "meta"
     episodes_metadata = []
     episodes_stats = []
@@ -404,28 +444,25 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     success_all = []
     last_frame_index_all = []
 
-    tasks = set()
     gidx = 0
-    for out_idx, (
+    for (
         episode_index,
         num_frames,
         sampled_obs,
         sampled_actions,
         sampled_cameras,
-    ) in enumerate(records):
+    ) in records:
+        lerobot_episode_index = remap_episode_index[episode_index]
+        lerobot_task_index = remap_task_index[
+            int(dataset.meta.episodes[episode_index]["task_index"])
+        ]
         # save for overall stats
         all_actions.append(sampled_actions)
         all_observations.append(sampled_obs)
         timestamp_all.append(np.arange(num_frames, dtype=np.float64) / float(fps))
         frame_index_all.append(np.arange(num_frames, dtype=np.int64))
-        episode_index_all.append(np.full(num_frames, out_idx, dtype=np.int64))
-        task_index_all.append(
-            np.full(
-                num_frames,
-                int(dataset.meta.episodes[episode_index]["task_index"]),
-                dtype=np.int64,
-            )
-        )
+        episode_index_all.append(np.full(num_frames, lerobot_episode_index, dtype=np.int64))
+        task_index_all.append(np.full(num_frames, lerobot_task_index, dtype=np.int64))
         index_all.append(np.arange(gidx, gidx + num_frames, dtype=np.int64))
         success_all.append(
             np.full(
@@ -437,11 +474,11 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         last_frame_index_all.append(np.full(num_frames, num_frames - 1, dtype=np.int64))
 
         # episodes metadata and stats
-        task_index = int(dataset.meta.episodes[episode_index]["task_index"])
-        task_name = dataset.meta.data["tasks"][task_index]["prompt"]
-        tasks.add((task_index, task_name))
+        task_name = dataset.meta.data["tasks"][
+            int(dataset.meta.episodes[episode_index]["task_index"])
+        ]["prompt"]
         rec = {
-            "episode_index": out_idx,
+            "episode_index": lerobot_episode_index,
             "tasks": [task_name],
             "length": len(sampled_obs),
         }
@@ -450,9 +487,9 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         stats = _calc_episode_stats(
             sampled_obs,
             sampled_actions,
-            out_idx,
+            lerobot_episode_index,
             gidx,
-            task_index,
+            lerobot_task_index,
             fps,
             sampled_cameras,
         )
@@ -472,13 +509,15 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         for stats in episodes_stats:
             f.write(json.dumps(stats, ensure_ascii=False) + "\n")
 
-    tasks = sorted(tasks)
+    # save tasks.jsonl using remapped (contiguous) task indices
     tasks_path = output_dir / METADATA_DIR / "tasks.jsonl"
     tasks_path.parent.mkdir(parents=True, exist_ok=True)
+    tasks_sorted = sorted(remap_task_index.items(), key=lambda kv: kv[1])
     with tasks_path.open("w", encoding="utf-8") as f:
-        for task_index, task_name in tasks:
+        for original_task_index, new_task_index in tasks_sorted:
+            task_name = dataset.meta.data["tasks"][original_task_index]["prompt"]
             rec = {
-                "task_index": task_index,
+                "task_index": new_task_index,
                 "task": task_name,
             }
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -655,9 +694,23 @@ def to_lerobotv21(
     # collect downsampled data for each episode
     records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
 
+    # build remaps from original to contiguous output indices (identity unless filtered)
+    remap_episode_index, remap_task_index = _build_remaps(dataset, records)
+
     # save parquet files for each episode (output_dir/data)
-    _write_parquet(dataset, records, output_dir, fps)
+    _write_parquet(
+        dataset, records, output_dir, fps, remap_episode_index, remap_task_index
+    )
     # save_videos for each episode (output_dir/videos)
-    _write_videos(dataset, records, output_dir, fps)
+    _write_videos(dataset, records, output_dir, fps, remap_episode_index)
     # episodes metadata and stats
-    _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
+    _write_metadata(
+        dataset,
+        records,
+        output_dir,
+        fps,
+        train_split,
+        joint_names,
+        remap_episode_index,
+        remap_task_index,
+    )
