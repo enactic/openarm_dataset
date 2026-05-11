@@ -24,7 +24,6 @@ import shutil
 
 from .dataset import Dataset
 from PIL import Image
-from math import ceil
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -624,7 +623,7 @@ def _write_metadata(
         }
     num_episodes = len(records)
     total_chunks = max((num_episodes - 1) // CHUNK_SIZE + 1, 0) if num_episodes else 0
-    train_end = ceil(num_episodes * train_split)
+    train_end = round(num_episodes * train_split)
     splits = {"train": f"0:{train_end}"}
     if train_end < num_episodes:
         splits["val"] = f"{train_end}:{num_episodes}"
@@ -683,7 +682,7 @@ def to_lerobotv21(
         else:
             # the output directory exists but does not contain expected subdirectories, so we should not clear it to avoid accidental deletion of unrelated files
             raise FileExistsError(
-                f"Output directory {output_dir} already exists but does not contain expected 'data' and 'videos' subdirectories. Please specify a non-existing directory or remove/backup the existing directory to avoid accidental deletion of unrelated files."
+                f"Output directory {output_dir} already exists but does not contain expected 'data' , 'videos' or 'meta' subdirectories. Please specify a non-existing directory or remove/backup the existing directory to avoid accidental deletion of unrelated files."
             )
     # set smoothing cutoff
     dataset.set_smoothing(cutoff=smoothing_cutoff)
