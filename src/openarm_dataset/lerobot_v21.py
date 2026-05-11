@@ -24,6 +24,7 @@ import shutil
 
 from .dataset import Dataset
 from PIL import Image
+from math import ceil
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -403,6 +404,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
     success_all = []
     last_frame_index_all = []
 
+    tasks = set()
     gidx = 0
     for out_idx, (
         episode_index,
@@ -437,6 +439,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         # episodes metadata and stats
         task_index = int(dataset.meta.episodes[episode_index]["task_index"])
         task_name = dataset.meta.data["tasks"][task_index]["prompt"]
+        tasks.add((task_index, task_name))
         rec = {
             "episode_index": out_idx,
             "tasks": [task_name],
@@ -469,12 +472,6 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         for stats in episodes_stats:
             f.write(json.dumps(stats, ensure_ascii=False) + "\n")
 
-    # save tasks.jsonl
-    tasks = set()
-    for episode in dataset.meta.episodes:
-        task_index = int(episode["task_index"])
-        task_name = dataset.meta.data["tasks"][task_index]["prompt"]
-        tasks.add((task_index, task_name))
     tasks = sorted(tasks)
     tasks_path = output_dir / METADATA_DIR / "tasks.jsonl"
     tasks_path.parent.mkdir(parents=True, exist_ok=True)
@@ -586,7 +583,7 @@ def _write_metadata(dataset, records, output_dir, fps, train_split, joint_names)
         }
     num_episodes = len(records)
     total_chunks = max((num_episodes - 1) // CHUNK_SIZE + 1, 0) if num_episodes else 0
-    train_end = int(num_episodes * train_split)
+    train_end = ceil(num_episodes * train_split)
     splits = {"train": f"0:{train_end}"}
     if train_end < num_episodes:
         splits["val"] = f"{train_end}:{num_episodes}"
@@ -622,15 +619,31 @@ def to_lerobotv21(
     """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory."""
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
+
     if fps <= 0:
         raise ValueError(f"fps must be a positive integer, got {fps}")
-    if Path(output_dir).exists() and not overwrite:
-        raise FileExistsError(
-            f"Output directory {output_dir} already exists. Please specify a non-existing directory to avoid overwriting."
-        )
-    elif Path(output_dir).exists() and overwrite:
-        shutil.rmtree(output_dir)
 
+    if Path(output_dir).exists():
+        if not overwrite:
+            # if the output directory already exists and overwrite is False, raise an error to avoid accidental data loss
+            raise FileExistsError(
+                f"Output directory {output_dir} already exists. Please specify a non-existing directory to avoid overwriting."
+            )
+        elif (
+            Path(output_dir) / "data" in Path(output_dir).iterdir()
+            or Path(output_dir) / "videos" in Path(output_dir).iterdir()
+            or Path(output_dir) / "meta" in Path(output_dir).iterdir()
+            or len(list(Path(output_dir).iterdir())) == 0
+        ):
+            # at least one of the expected subdirectories exists, so we can be reasonably sure this is an existing output dir and safe to clear
+            shutil.rmtree(Path(output_dir) / "data", ignore_errors=True)
+            shutil.rmtree(Path(output_dir) / "videos", ignore_errors=True)
+            shutil.rmtree(Path(output_dir) / "meta", ignore_errors=True)
+        else:
+            # the output directory exists but does not contain expected subdirectories, so we should not clear it to avoid accidental deletion of unrelated files
+            raise FileExistsError(
+                f"Output directory {output_dir} already exists but does not contain expected 'data' and 'videos' subdirectories. Please specify a non-existing directory or remove/backup the existing directory to avoid accidental deletion of unrelated files."
+            )
     # set smoothing cutoff
     dataset.set_smoothing(cutoff=smoothing_cutoff)
     # Create the output directories
