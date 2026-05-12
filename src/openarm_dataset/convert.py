@@ -56,12 +56,20 @@ def main():
         type=float,
         default=0.8,
     )
+    parser.add_argument(
+        "--success-only",
+        help="Include only successful episodes in the output dataset (default: False) if the output format is lerobot_v2.1",
+        action="store_true",
+        default=False,
+    )
+
     args = parser.parse_args()
     write_kwargs = {"format": args.format}
     if args.format == "lerobot_v2.1":
         write_kwargs["fps"] = args.fps
         write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
         write_kwargs["train_split"] = args.train_split
+        write_kwargs["success_only"] = args.success_only
 
     old_dataset = openarm_dataset.Dataset(args.input)
     old_dataset.write(args.output, **write_kwargs)
