@@ -673,6 +673,9 @@ def to_lerobotv21(
     # collect downsampled data for each episode
     records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
 
+    if not records:
+        raise ValueError("No episodes to write.")
+
     # build remaps from original to contiguous output indices (identity unless filtered)
     remap_episode_index, remap_task_index = _build_remaps(dataset, records)
 
