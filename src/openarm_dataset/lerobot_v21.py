@@ -85,7 +85,7 @@ def _collect_downsampled_data(
 ):
     records = []
     for episode_index in range(dataset.meta.num_episodes):
-        success = bool(dataset.meta.episodes[episode_index]["success"])
+        success = dataset.meta.episodes[episode_index]["success"]
         if not success and success_only:
             continue
         samples = dataset.sample(hz=fps, episode_index=episode_index)
@@ -124,9 +124,9 @@ def _build_remaps(dataset: Dataset, records):
     seen = set()
     used_task_indices = []
     for original_episode_index, *_ in records:
-        original_task_index = int(
-            dataset.meta.episodes[original_episode_index]["task_index"]
-        )
+        original_task_index = dataset.meta.episodes[original_episode_index][
+            "task_index"
+        ]
         if original_task_index not in seen:
             seen.add(original_task_index)
             used_task_indices.append(original_task_index)
