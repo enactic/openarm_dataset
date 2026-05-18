@@ -252,7 +252,7 @@ class BallScrewLifter(Embodiment):
 
 
 class OpenArmCellLifter(Embodiment):
-    """Metadata for OpenArm cell lifter as embodiment."""
+    """Metadata for OpenArm Cell Lifter as embodiment."""
 
     def __init__(self, name: str, data: dict):
         """Initialize OpenArmCellLifter."""
