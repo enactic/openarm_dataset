@@ -69,10 +69,17 @@ def merge_datasets(
 
 def _validate_compatibility(datasets: list[Dataset]) -> None:
     ref = datasets[0]
+    ref_version = ref.meta.version
     ref_embodiments = ref.meta.equipment.embodiments
     ref_cameras = set(ref.meta.equipment.perceptions.cameras)
 
     for i, ds in enumerate(datasets[1:], 1):
+        if ds.meta.version != ref_version:
+            raise MergeError(
+                f"Dataset {i}: version mismatch. "
+                f"Expected {ref_version!r}, got {ds.meta.version!r}"
+            )
+
         eq = ds.meta.equipment
 
         if set(ref_embodiments) != set(eq.embodiments):
