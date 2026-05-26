@@ -94,6 +94,18 @@ openarm-dataset-validate <input>
 
 Exits with status `1` if any errors are reported.
 
+Merge multiple datasets:
+
+```bash
+openarm-dataset-merge <input1> <input2> [<input3> ...] \
+    -o <output>    \
+    [--symlink]    # create symlinks instead of copying episode data
+```
+
+All input datasets must have the same version, equipment, and frequencies.
+Tasks are deduplicated by prompt: identical prompts are treated as the same
+task. Episodes are renumbered sequentially starting from 0.
+
 Convert a dataset:
 
 ```bash
