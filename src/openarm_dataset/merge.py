@@ -15,7 +15,6 @@
 """Merge multiple OpenArm datasets."""
 
 from __future__ import annotations
-from turtle import st
 
 import argparse
 import copy
@@ -134,7 +133,7 @@ def _build_merged_episodes(
         for ep in ds.meta.episodes:
             merged_episodes.append(
                 {
-                    "id": len(merged_episodes),
+                    "id": str(len(merged_episodes)),
                     "success": ep["success"],
                     "task_index": task_index_maps[ds_idx][ep["task_index"]],
                 }
@@ -166,7 +165,7 @@ def _write_episodes(
     episode_counter = 0
     for ds in datasets:
         for ep_idx in range(ds.num_episodes):
-            src = ds._episode_path(ep_idx)
+            src = ds.episode_path(ep_idx)
             dst = output / "episodes" / str(episode_counter)
             if symlink:
                 dst.parent.mkdir(parents=True, exist_ok=True)

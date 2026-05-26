@@ -121,7 +121,8 @@ class Dataset:
     def _episode_id(self, index: int) -> str:
         return self.meta.episodes[index]["id"]
 
-    def _episode_path(self, episode_index: int = None) -> Path:
+    def episode_path(self, episode_index: int = None) -> Path:
+        """Return the path of the episode."""
         if episode_index is None:
             return self.root_path
         episode_id = self._episode_id(episode_index)
@@ -224,7 +225,7 @@ class Dataset:
         """
         if name not in self.camera_names:
             raise KeyError(f"Camera {name} not found. Available: {self.camera_names}")
-        base_path = self._episode_path(episode_index)
+        base_path = self.episode_path(episode_index)
         # Unversioned dataset. This is for backward compatibility.
         if self.meta.version is None:
             path = base_path / f"{name}_image"
@@ -280,9 +281,9 @@ class Dataset:
             # Unversioned dataset.
             # This is for backward compatibility.
             if self.meta.version is None:
-                base_path = self._episode_path(episode_index) / type_
+                base_path = self.episode_path(episode_index) / type_
             else:
-                base_path = self._episode_path(episode_index) / type_ / name
+                base_path = self.episode_path(episode_index) / type_ / name
             if embodiment.components:
                 for component in embodiment.components:
                     state_path = base_path / component / "state.parquet"
