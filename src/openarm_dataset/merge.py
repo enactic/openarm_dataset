@@ -15,6 +15,7 @@
 """Merge multiple OpenArm datasets."""
 
 from __future__ import annotations
+from turtle import st
 
 import argparse
 import copy
@@ -128,18 +129,16 @@ def _build_merged_episodes(
     task_index_maps: list[dict[int, int]],
 ) -> list[dict]:
     merged_episodes = []
-    episode_counter = 0
 
     for ds_idx, ds in enumerate(datasets):
         for ep in ds.meta.episodes:
             merged_episodes.append(
                 {
-                    "id": str(episode_counter),
+                    "id": len(merged_episodes),
                     "success": ep["success"],
                     "task_index": task_index_maps[ds_idx][ep["task_index"]],
                 }
             )
-            episode_counter += 1
 
     return merged_episodes
 
