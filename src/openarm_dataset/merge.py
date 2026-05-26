@@ -57,6 +57,8 @@ def merge_datasets(
 
     datasets = [Dataset(p) for p in inputs]
     output = pathlib.Path(output)
+    if output.exists():
+        raise MergeError(f"Output path {output} already exists")
 
     _validate_compatibility(datasets)
 
