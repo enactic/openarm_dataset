@@ -80,7 +80,9 @@ def test_merge_with_symlink(dataset_a, dataset_b, tmp_path):
 def test_merge_different_tasks(dataset_a, dataset_b, tmp_path):
     meta_path = dataset_b / "metadata.yaml"
     meta = _load_meta(dataset_b)
-    meta["tasks"].append({"prompt": "Different task.", "description": "Something else."})
+    meta["tasks"].append(
+        {"prompt": "Different task.", "description": "Something else."}
+    )
     meta["episodes"][1]["task_index"] = 1
     with open(meta_path, "w") as f:
         yaml.safe_dump(meta, f)
@@ -121,13 +123,13 @@ def test_merge_incompatible_version(dataset_a, dataset_b, tmp_path):
         merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
 
 
-def test_merge_incompatible_embodiments(dataset_a, dataset_b, tmp_path):
+def test_merge_incompatible_embodiment_version(dataset_a, dataset_b, tmp_path):
     meta = _load_meta(dataset_b)
     meta["equipment"]["embodiments"]["arms"]["version"] = "99.0"
     with open(dataset_b / "metadata.yaml", "w") as f:
         yaml.safe_dump(meta, f)
 
-    with pytest.raises(MergeError, match="embodiment.*mismatch"):
+    with pytest.raises(MergeError, match="equipment.*differs"):
         merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
 
 
@@ -137,8 +139,39 @@ def test_merge_incompatible_cameras(dataset_a, dataset_b, tmp_path):
     with open(dataset_b / "metadata.yaml", "w") as f:
         yaml.safe_dump(meta, f)
 
-    with pytest.raises(MergeError, match="camera mismatch"):
+    with pytest.raises(MergeError, match="equipment.*differs"):
         merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
+
+
+def test_merge_incompatible_lifter_params(dataset_a, dataset_b, tmp_path):
+    meta = _load_meta(dataset_b)
+    meta["equipment"]["embodiments"]["lifter"]["stroke"] = 999
+    with open(dataset_b / "metadata.yaml", "w") as f:
+        yaml.safe_dump(meta, f)
+
+    with pytest.raises(MergeError, match="equipment.*differs"):
+        merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
+
+
+def test_merge_incompatible_frequencies(dataset_a, dataset_b, tmp_path):
+    meta = _load_meta(dataset_b)
+    meta["frequencies"]["obs"]["arms"]["left"] = 500.0
+    with open(dataset_b / "metadata.yaml", "w") as f:
+        yaml.safe_dump(meta, f)
+
+    with pytest.raises(MergeError, match="frequencies.*differs"):
+        merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
+
+
+def test_merge_rejects_unversioned(tmp_path):
+    fixture_unversioned = Path(__file__).parent / "fixture" / "dataset_unversioned"
+    ds_a = tmp_path / "ds_a"
+    ds_b = tmp_path / "ds_b"
+    shutil.copytree(fixture_unversioned, ds_a)
+    shutil.copytree(fixture_unversioned, ds_b)
+
+    with pytest.raises(MergeError, match="unversioned"):
+        merge_datasets([ds_a, ds_b], tmp_path / "merged")
 
 
 def test_merge_requires_at_least_two(dataset_a, tmp_path):
@@ -156,7 +189,12 @@ def test_merge_three_datasets(dataset_a, dataset_b, tmp_path):
     meta = _load_meta(output)
     assert len(meta["episodes"]) == 6
     assert [ep["id"] for ep in meta["episodes"]] == [
-        "0", "1", "2", "3", "4", "5",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
     ]
 
 

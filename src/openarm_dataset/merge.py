@@ -70,8 +70,15 @@ def merge_datasets(
 def _validate_compatibility(datasets: list[Dataset]) -> None:
     ref = datasets[0]
     ref_version = ref.meta.version
-    ref_embodiments = ref.meta.equipment.embodiments
-    ref_cameras = set(ref.meta.equipment.perceptions.cameras)
+
+    if ref_version is None:
+        raise MergeError(
+            "Dataset 0: unversioned dataset is not supported. "
+            "Convert to the latest format first using openarm-dataset-convert."
+        )
+
+    ref_equipment = ref.meta.data["equipment"]
+    ref_frequencies = ref.meta.data.get("frequencies", {})
 
     for i, ds in enumerate(datasets[1:], 1):
         if ds.meta.version != ref_version:
@@ -80,30 +87,14 @@ def _validate_compatibility(datasets: list[Dataset]) -> None:
                 f"Expected {ref_version!r}, got {ds.meta.version!r}"
             )
 
-        eq = ds.meta.equipment
-
-        if set(ref_embodiments) != set(eq.embodiments):
+        if ds.meta.data["equipment"] != ref_equipment:
             raise MergeError(
-                f"Dataset {i}: embodiment mismatch. "
-                f"Expected {sorted(ref_embodiments)}, "
-                f"got {sorted(eq.embodiments)}"
+                f"Dataset {i}: equipment configuration differs from dataset 0"
             )
 
-        for name in ref_embodiments:
-            ref_emb = ref_embodiments[name]
-            ds_emb = eq.embodiments[name]
-            if ref_emb.id != ds_emb.id or ref_emb.version != ds_emb.version:
-                raise MergeError(
-                    f"Dataset {i}: embodiment '{name}' mismatch. "
-                    f"Expected {ref_emb.id} v{ref_emb.version}, "
-                    f"got {ds_emb.id} v{ds_emb.version}"
-                )
-
-        ds_cameras = set(eq.perceptions.cameras)
-        if ref_cameras != ds_cameras:
+        if ds.meta.data.get("frequencies", {}) != ref_frequencies:
             raise MergeError(
-                f"Dataset {i}: camera mismatch. "
-                f"Expected {sorted(ref_cameras)}, got {sorted(ds_cameras)}"
+                f"Dataset {i}: frequencies configuration differs from dataset 0"
             )
 
 
@@ -157,18 +148,14 @@ def _write_metadata(
     episodes: list[dict],
     output: pathlib.Path,
 ) -> None:
-    equipment = copy.deepcopy(ref_dataset.meta.data.get("equipment", {}))
-    if ref_dataset.meta.version is None:
-        equipment = ref_dataset.meta._convert_unversioned_equipment()
-
     data = {
-        "version": "0.3.0",
+        "version": ref_dataset.meta.version,
         "location": ref_dataset.meta.location,
         "operator": ref_dataset.meta.operator,
         "operation_type": ref_dataset.meta.operation_type,
         "tasks": tasks,
         "episodes": episodes,
-        "equipment": equipment,
+        "equipment": copy.deepcopy(ref_dataset.meta.data["equipment"]),
         "frequencies": copy.deepcopy(ref_dataset.meta.data.get("frequencies", {})),
     }
 
