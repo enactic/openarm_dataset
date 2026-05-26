@@ -150,16 +150,9 @@ def _write_metadata(
     episodes: list[dict],
     output: pathlib.Path,
 ) -> None:
-    data = {
-        "version": ref_dataset.meta.version,
-        "location": ref_dataset.meta.location,
-        "operator": ref_dataset.meta.operator,
-        "operation_type": ref_dataset.meta.operation_type,
-        "tasks": tasks,
-        "episodes": episodes,
-        "equipment": copy.deepcopy(ref_dataset.meta.data["equipment"]),
-        "frequencies": copy.deepcopy(ref_dataset.meta.data.get("frequencies", {})),
-    }
+    data = copy.deepcopy(ref_dataset.meta.data)
+    data["tasks"] = tasks
+    data["episodes"] = episodes
 
     output.mkdir(parents=True, exist_ok=True)
     with open(output / "metadata.yaml", "w") as f:
