@@ -178,7 +178,7 @@ def _write_episodes(
             dst = output / "episodes" / str(episode_counter)
             if symlink:
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                dst.symlink_to(src.resolve())
+                dst.symlink_to(src.resolve(), target_is_directory=True)
             else:
                 shutil.copytree(src, dst)
             episode_counter += 1
