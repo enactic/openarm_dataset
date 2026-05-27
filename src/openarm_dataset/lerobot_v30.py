@@ -529,7 +529,10 @@ def _write_info_json(
         },
     }
 
-    sample_record = dataset.sample(hz=fps, episode_index=0)[0]
+    first_episode_index = records[0][0]
+    sample_record = dataset.sample(
+        hz=fps, episode=dataset.meta.episodes[first_episode_index]
+    )[0]
     for cam in dataset.camera_names:
         sample_image = sample_record.cameras[cam].load()
         h, w = sample_image.shape[:2]
