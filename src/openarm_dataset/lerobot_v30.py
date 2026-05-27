@@ -17,6 +17,8 @@
 from pathlib import Path
 
 import json
+import subprocess
+import tempfile
 import numpy as np
 import pandas as pd
 
@@ -33,6 +35,8 @@ from .lerobot_v21 import (
     _describe_scalar,
     _describe_vector,
     _encode_mp4,
+    _escape_concat_path,
+    _get_ffmpeg_exe,
     _get_image_name_from_key,
 )
 
@@ -48,24 +52,84 @@ INFO_PATH = "meta/info.json"
 STATS_PATH = "meta/stats.json"
 
 
-def _flatten_dict(d, parent_key="", sep="/"):
-    """Flatten a nested dict using ``/`` separator."""
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(_flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
+def _update_chunk_file_indices(chunk_idx: int, file_idx: int) -> tuple[int, int]:
+    """Advance to the next file index, rolling over to next chunk at CHUNK_SIZE."""
+    if file_idx == CHUNK_SIZE - 1:
+        return chunk_idx + 1, 0
+    return chunk_idx, file_idx + 1
+
+
+def _get_parquet_size_in_mb(path: Path) -> float:
+    return path.stat().st_size / (1024**2)
+
+
+def _get_file_size_in_mb(path: Path) -> float:
+    return path.stat().st_size / (1024**2)
+
+
+def _get_video_duration_in_s(path: Path) -> float:
+    """Get video duration using ffprobe."""
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip())
+
+
+def _concatenate_mp4_files(input_paths: list[Path], output_path: Path):
+    """Concatenate multiple MP4 files using ffmpeg concat demuxer (no re-encode)."""
+    ffmpeg_exe = _get_ffmpeg_exe()
+    if ffmpeg_exe is None:
+        raise RuntimeError("FFmpeg executable not found.")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".ffconcat", delete=False) as tmp:
+        tmp.write("ffconcat version 1.0\n")
+        for p in input_paths:
+            tmp.write(f"file '{_escape_concat_path(p)}'\n")
+        tmp_path = tmp.name
+    cmd = [
+        ffmpeg_exe,
+        "-y",
+        "-nostdin",
+        "-loglevel",
+        "warning",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        tmp_path,
+        "-c",
+        "copy",
+        str(output_path),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    Path(tmp_path).unlink(missing_ok=True)
 
 
 def _write_packed_parquet(
     dataset, records, output_dir, fps, remap_episode_index, remap_task_index
 ):
-    """Write all episodes into a single packed parquet file."""
-    all_dfs = []
+    """Write episode data into packed parquet files, splitting by size limit.
+
+    Returns a list of dicts with per-episode data file metadata
+    (``data/chunk_index``, ``data/file_index``, ``dataset_from_index``,
+    ``dataset_to_index``).
+    """
+    chunk_idx = 0
+    file_idx = 0
+    size_in_mb = 0.0
     gidx = 0
+    pending_dfs: list[pd.DataFrame] = []
+    episodes_data_meta: list[dict] = []
+
     for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
         lerobot_episode_index = remap_episode_index[episode_index]
         task_index = remap_task_index[
@@ -88,59 +152,116 @@ def _write_packed_parquet(
                 "last_frame_index": np.full(num_frames, num_frames - 1, dtype=np.int64),
             }
         )
-        all_dfs.append(df)
+
+        # Estimate this episode's parquet size by writing to a temporary file
+        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        df.to_parquet(tmp_path, index=False)
+        ep_size_in_mb = _get_parquet_size_in_mb(tmp_path)
+        tmp_path.unlink()
+
+        if size_in_mb + ep_size_in_mb >= DATA_FILES_SIZE_IN_MB and pending_dfs:
+            packed = pd.concat(pending_dfs, ignore_index=True)
+            out = output_dir / DATA_PATH.format(
+                chunk_index=chunk_idx, file_index=file_idx
+            )
+            out.parent.mkdir(parents=True, exist_ok=True)
+            packed.to_parquet(out, index=False)
+
+            chunk_idx, file_idx = _update_chunk_file_indices(chunk_idx, file_idx)
+            size_in_mb = 0.0
+            pending_dfs = []
+
+        episodes_data_meta.append(
+            {
+                "data/chunk_index": chunk_idx,
+                "data/file_index": file_idx,
+                "dataset_from_index": gidx,
+                "dataset_to_index": gidx + num_frames,
+            }
+        )
+        pending_dfs.append(df)
+        size_in_mb += ep_size_in_mb
         gidx += num_frames
 
-    packed_df = pd.concat(all_dfs, ignore_index=True)
-    parquet_path = output_dir / DATA_PATH.format(chunk_index=0, file_index=0)
-    parquet_path.parent.mkdir(parents=True, exist_ok=True)
-    packed_df.to_parquet(parquet_path, index=False)
+    if pending_dfs:
+        packed = pd.concat(pending_dfs, ignore_index=True)
+        out = output_dir / DATA_PATH.format(chunk_index=chunk_idx, file_index=file_idx)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        packed.to_parquet(out, index=False)
+
+    return episodes_data_meta, gidx
 
 
-def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index):
-    """Encode all episodes' frames per camera into a single concatenated MP4.
+def _write_packed_videos(
+    dataset, records, output_dir, fps, remap_episode_index, tmp_dir
+):
+    """Encode per-episode MP4s, then concatenate into packed files by size limit.
 
     Returns a list of dicts with per-episode video metadata.
     """
-    video_metadata: list[dict] = []
+    episodes_video_meta: list[dict] = [{} for _ in records]
 
     for camera_key in dataset.camera_names:
-        all_frames: list[Path] = []
-        episode_boundaries: list[tuple[int, int, int]] = []
-        frame_count = 0
+        image_name = _get_image_name_from_key(camera_key)
 
-        for episode_index, _, _, _, sampled_cameras in records:
+        # Phase 1: encode individual episode MP4s into tmp_dir
+        ep_mp4_paths: list[Path] = []
+        for idx, (episode_index, _, _, _, sampled_cameras) in enumerate(records):
             lerobot_episode_index = remap_episode_index[episode_index]
             frames = sampled_cameras[camera_key]
-            num_frames = len(frames)
-            episode_boundaries.append(
-                (lerobot_episode_index, frame_count, frame_count + num_frames)
+            ep_mp4 = tmp_dir / f"{image_name}_ep{lerobot_episode_index:06d}.mp4"
+            _encode_mp4(frames, fps, ep_mp4, verbose=False)
+            ep_mp4_paths.append(ep_mp4)
+
+        # Phase 2: pack into file-XXX.mp4 by size limit
+        chunk_idx = 0
+        file_idx = 0
+        size_in_mb = 0.0
+        duration_in_s = 0.0
+        paths_to_cat: list[Path] = []
+        # Temporary storage for chunk/file assignment per episode
+        ep_assignments: list[tuple[int, int, float, float]] = []
+
+        for idx, ep_mp4 in enumerate(ep_mp4_paths):
+            ep_size = _get_file_size_in_mb(ep_mp4)
+            ep_duration = _get_video_duration_in_s(ep_mp4)
+
+            if size_in_mb + ep_size >= VIDEO_FILES_SIZE_IN_MB and paths_to_cat:
+                out_path = output_dir / VIDEO_PATH.format(
+                    video_key=image_name,
+                    chunk_index=chunk_idx,
+                    file_index=file_idx,
+                )
+                _concatenate_mp4_files(paths_to_cat, out_path)
+
+                chunk_idx, file_idx = _update_chunk_file_indices(chunk_idx, file_idx)
+                size_in_mb = 0.0
+                duration_in_s = 0.0
+                paths_to_cat = []
+
+            from_ts = duration_in_s
+            to_ts = duration_in_s + ep_duration
+            ep_assignments.append((chunk_idx, file_idx, from_ts, to_ts))
+            paths_to_cat.append(ep_mp4)
+            size_in_mb += ep_size
+            duration_in_s += ep_duration
+
+        if paths_to_cat:
+            out_path = output_dir / VIDEO_PATH.format(
+                video_key=image_name,
+                chunk_index=chunk_idx,
+                file_index=file_idx,
             )
-            all_frames.extend(frames)
-            frame_count += num_frames
+            _concatenate_mp4_files(paths_to_cat, out_path)
 
-        image_name = _get_image_name_from_key(camera_key)
-        video_path = output_dir / VIDEO_PATH.format(
-            video_key=image_name,
-            chunk_index=0,
-            file_index=0,
-        )
-        video_path.parent.mkdir(parents=True, exist_ok=True)
-        _encode_mp4(all_frames, fps, video_path)
+        for idx, (c, f, from_ts, to_ts) in enumerate(ep_assignments):
+            episodes_video_meta[idx][f"videos/{image_name}/chunk_index"] = c
+            episodes_video_meta[idx][f"videos/{image_name}/file_index"] = f
+            episodes_video_meta[idx][f"videos/{image_name}/from_timestamp"] = from_ts
+            episodes_video_meta[idx][f"videos/{image_name}/to_timestamp"] = to_ts
 
-        for ep_idx, (lerobot_ep_idx, from_frame, to_frame) in enumerate(
-            episode_boundaries
-        ):
-            if len(video_metadata) <= ep_idx:
-                video_metadata.append({"episode_index": lerobot_ep_idx})
-            from_ts = from_frame / float(fps)
-            to_ts = to_frame / float(fps)
-            video_metadata[ep_idx][f"videos/{image_name}/chunk_index"] = 0
-            video_metadata[ep_idx][f"videos/{image_name}/file_index"] = 0
-            video_metadata[ep_idx][f"videos/{image_name}/from_timestamp"] = from_ts
-            video_metadata[ep_idx][f"videos/{image_name}/to_timestamp"] = to_ts
-
-    return video_metadata
+    return episodes_video_meta
 
 
 def _calc_episode_stats_numpy(
@@ -280,12 +401,11 @@ def _write_episodes_and_stats(
     fps,
     remap_episode_index,
     remap_task_index,
-    video_metadata,
+    episodes_data_meta,
+    episodes_video_meta,
+    total_frames,
 ):
-    """Write episodes parquet with metadata + stats, and aggregated stats.json.
-
-    Returns total number of frames.
-    """
+    """Write episodes parquet with metadata + stats, and aggregated stats.json."""
     all_episode_dicts: list[dict] = []
     all_episode_stats: list[dict] = []
     gidx = 0
@@ -309,18 +429,14 @@ def _write_episodes_and_stats(
             "episode_index": lerobot_episode_index,
             "tasks": [task_name],
             "length": num_frames,
-            "data/chunk_index": 0,
-            "data/file_index": 0,
-            "dataset_from_index": gidx,
-            "dataset_to_index": gidx + num_frames,
+            **episodes_data_meta[idx],
             "meta/episodes/chunk_index": 0,
             "meta/episodes/file_index": 0,
         }
 
-        if video_metadata and idx < len(video_metadata):
-            for k, v in video_metadata[idx].items():
-                if k != "episode_index":
-                    ep_dict[k] = v
+        if episodes_video_meta:
+            for k, v in episodes_video_meta[idx].items():
+                ep_dict[k] = v
 
         ep_stats = _calc_episode_stats_numpy(
             sampled_obs,
@@ -339,7 +455,6 @@ def _write_episodes_and_stats(
         all_episode_stats.append(ep_stats)
         gidx += num_frames
 
-    # Convert numpy arrays to Python lists so pyarrow can serialise them.
     for ep_dict in all_episode_dicts:
         for k, v in ep_dict.items():
             if isinstance(v, np.ndarray):
@@ -355,8 +470,6 @@ def _write_episodes_and_stats(
     stats_path.parent.mkdir(parents=True, exist_ok=True)
     with stats_path.open("w", encoding="utf-8") as f:
         json.dump(_serialize_stats(overall_stats), f, ensure_ascii=False, indent=4)
-
-    return gidx
 
 
 def _write_tasks_parquet(dataset, remap_task_index, output_dir):
@@ -496,20 +609,30 @@ def to_lerobotv30(
 
     remap_episode_index, remap_task_index = _build_remaps(dataset, records)
 
-    _write_packed_parquet(
+    episodes_data_meta, total_frames = _write_packed_parquet(
         dataset, records, output_dir, fps, remap_episode_index, remap_task_index
     )
-    video_metadata = _write_packed_videos(
-        dataset, records, output_dir, fps, remap_episode_index
-    )
-    total_frames = _write_episodes_and_stats(
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        episodes_video_meta = _write_packed_videos(
+            dataset,
+            records,
+            output_dir,
+            fps,
+            remap_episode_index,
+            Path(tmp_dir),
+        )
+
+    _write_episodes_and_stats(
         dataset,
         records,
         output_dir,
         fps,
         remap_episode_index,
         remap_task_index,
-        video_metadata,
+        episodes_data_meta,
+        episodes_video_meta,
+        total_frames,
     )
     _write_tasks_parquet(dataset, remap_task_index, output_dir)
     _write_info_json(
