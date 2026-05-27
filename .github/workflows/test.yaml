@@ -30,6 +30,7 @@ jobs:
       matrix:
         extra:
           - lerobot-dataset-v2.1
+          - lerobot-dataset-v3.0
           - rerun
     steps:
       - uses: actions/checkout@v6

@@ -36,36 +36,36 @@ def main():
         "--format",
         help="Format of the output dataset (default: openarm)",
         default="openarm",
-        choices=["openarm", "lerobot_v2.1", "gr00t"],
+        choices=["openarm", "lerobot_v2.1", "lerobot_v3.0", "gr00t"],
     )
     parser.add_argument(
         "--fps",
-        help="Frames per second for the output dataset (default: 30) if the output format is lerobot_v2.1 or gr00t",
+        help="Frames per second for the output dataset (default: 30) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
         type=int,
         default=30,
     )
     parser.add_argument(
         "--smoothing-cutoff",
-        help="Cutoff frequency for smoothing (default: 1.0) if the output format is lerobot_v2.1 or gr00t",
+        help="Cutoff frequency for smoothing (default: 1.0) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
         type=float,
         default=1.0,
     )
     parser.add_argument(
         "--train-split",
-        help="Split ratio for training dataset (default: 0.8) if the output format is lerobot_v2.1 or gr00t",
+        help="Split ratio for training dataset (default: 0.8) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
         type=float,
         default=0.8,
     )
     parser.add_argument(
         "--success-only",
-        help="Include only successful episodes in the output dataset (default: False) if the output format is lerobot_v2.1 or gr00t",
+        help="Include only successful episodes in the output dataset (default: False) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
         action="store_true",
         default=False,
     )
 
     args = parser.parse_args()
     write_kwargs = {"format": args.format}
-    if args.format in ("lerobot_v2.1", "gr00t"):
+    if args.format in ("lerobot_v2.1", "lerobot_v3.0", "gr00t"):
         write_kwargs["fps"] = args.fps
         write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
         write_kwargs["train_split"] = args.train_split

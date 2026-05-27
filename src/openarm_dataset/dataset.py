@@ -422,6 +422,10 @@ class Dataset:
             from .lerobot_v21 import to_lerobotv21
 
             return to_lerobotv21(self, output, **options)
+        elif format == "lerobot_v3.0":
+            from .lerobot_v30 import to_lerobotv30
+
+            return to_lerobotv30(self, output, **options)
         elif format == "gr00t":
             from .lerobot_v21 import to_gr00t
 

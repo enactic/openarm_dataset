@@ -23,9 +23,19 @@ import pandas as pd
 from PIL import Image
 from openarm_dataset import Dataset
 from openarm_dataset.lerobot_v21 import _sample_image_indices
+import packaging.version
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+import lerobot
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
+
+_lerobot_v3 = packaging.version.parse(lerobot.__version__) >= packaging.version.parse(
+    "0.5.0"
+)
+_skip_v21_load = pytest.mark.skipif(
+    _lerobot_v3,
+    reason="lerobot >= 0.5.0 no longer loads v2.1 datasets",
+)
 DATASET_0_3_0_PATH = FIXTURE_DIR / "dataset_0.3.0"
 FPS = 30
 # Image stats are subsampled (lerobot-style), so tolerances are loose vs full-pixel truth.
@@ -217,6 +227,7 @@ def test_video(lerobot_v21_setup):
         )
 
 
+@_skip_v21_load
 def test_load(lerobot_v21_setup):
     dataset, lerobot_path = lerobot_v21_setup
     lerobot_dataset = LeRobotDataset(repo_id="test/data", root=lerobot_path)
@@ -243,6 +254,7 @@ def test_lifter_info_features(lerobot_v21_setup):
     assert info["features"]["observation.state"]["names"][-1] == "elevation.pos"
 
 
+@_skip_v21_load
 def test_success_only(tmp_path):
     dataset = Dataset(DATASET_0_3_0_PATH)
     dataset.set_smoothing(1.0)
