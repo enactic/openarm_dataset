@@ -33,6 +33,11 @@ dependencies = [
     "scipy",
 ]
 
+[project.optional-dependencies]
+test = [
+    "lerobot == 0.3.3",
+]
+
 [project.urls]
 Changelog = "https://github.com/enactic/openarm_dataset/releases"
 Issues = "https://github.com/enactic/openarm_dataset/issues"
@@ -47,7 +52,6 @@ openarm-dataset-validate = "openarm_dataset.validate:main"
 dev = [
     "pytest",
     "ruff == 0.14.11", # sync with .pre-commit-config.yaml
-    "lerobot == 0.3.3",
 ]
 
 [tool.setuptools]
