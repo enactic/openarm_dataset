@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import shutil
 import subprocess
 import sys
@@ -96,6 +97,27 @@ def test_validate_multiple_invalid_qpos_with_null_inside_list(tmp_path):
         "episodes/0/obs/arms/right/state.parquet: includes null values",
         "episodes/0/obs/arms/left/state.parquet: includes null values",
     ]
+
+
+def _inject_nan_in_qpos_list(state_path):
+    """Replace a float value inside qpos with NaN (not null)."""
+    df = pd.read_parquet(state_path)
+    values = df["qpos"].tolist()
+    first = list(values[0])
+    first[0] = math.nan
+    values[0] = first
+    df["qpos"] = values
+    df.to_parquet(state_path)
+
+
+def test_validate_detects_nan_in_qpos(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
+    _inject_nan_in_qpos_list(state_path)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == ["episodes/0/obs/arms/left/state.parquet: includes null values"]
 
 
 def test_validate_cli_valid():

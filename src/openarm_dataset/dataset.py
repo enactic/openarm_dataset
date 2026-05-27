@@ -18,6 +18,8 @@ import os
 from pathlib import Path
 import shutil
 
+import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pandas as pd
 import scipy.signal as signal
@@ -97,6 +99,19 @@ class Dataset:
                                 break
                         if has_null:
                             break
+                    if not has_null:
+                        table = pq.read_table(path)
+                        for col_name in table.schema.names:
+                            if col_name == "timestamp":
+                                continue
+                            col = table.column(col_name)
+                            flat = col.combine_chunks().values
+                            if (
+                                pa.types.is_floating(flat.type)
+                                and pc.any(pc.is_nan(flat)).as_py()
+                            ):
+                                has_null = True
+                                break
                     if has_null:
                         if on_error is not None:
                             on_error(
