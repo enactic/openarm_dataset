@@ -94,6 +94,20 @@ openarm-dataset-validate <input>
 
 Exits with status `1` if any errors are reported.
 
+Repair a dataset:
+
+```bash
+openarm-dataset-repair <input> \
+    [-o <output>]    # write the repaired dataset here; repairs in place if omitted
+```
+
+Fills isolated single-frame gaps (a `null` or `NaN` in a `qpos`/`qvel`/
+`qtorque`/`value` array) by averaging the immediately preceding and following
+frame values, per array element. Gaps spanning two or more consecutive frames,
+and gaps at the first or last frame, cannot be averaged and are left untouched
+with a warning on stderr. The command always exits with status `0`; run
+`openarm-dataset-validate` afterwards to confirm the result.
+
 Merge multiple datasets:
 
 ```bash
