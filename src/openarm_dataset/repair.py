@@ -21,7 +21,6 @@ at the first or last frame, cannot be averaged and are left untouched.
 """
 
 import argparse
-import os
 import pathlib
 import shutil
 import sys
@@ -32,9 +31,47 @@ import pandas as pd
 import openarm_dataset
 
 
+def copy_parquet(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
+    """Copy an OpenArm dataset, images are symlinked instead of copied."""
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    src_dataset = openarm_dataset.Dataset(input_path)
+    # copy metadata.
+    src_dataset.meta.write(pathlib.Path(output_path))
+
+    # save episodes
+    for episode_index in range(src_dataset.num_episodes):
+        episode_path = src_dataset.episode_path(
+            episode_index
+        )  # root / episodes / 0 / {cameras, obs, action}
+        for item in episode_path.iterdir():
+            if item.is_dir() and item.name == "cameras":
+                # Symlink camera images instead of copying.
+                target = (
+                    pathlib.Path(output_path)
+                    / episode_path.relative_to(src_dataset.root_path)
+                    / item.name
+                )
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    target.unlink()
+                target.symlink_to(item.resolve())
+            else:
+                # Copy everything else (parquet files, metadata, etc.).
+                target = (
+                    pathlib.Path(output_path)
+                    / episode_path.relative_to(src_dataset.root_path)
+                    / item.name
+                )
+                if item.is_dir():
+                    shutil.copytree(item, target)
+                else:
+                    shutil.copy2(item, target)
+
+
 def repair_dataset(
-    input_path: str | os.PathLike,
-    output_path: str | os.PathLike | None = None,
+    input_path: pathlib.Path,
+    output_path: pathlib.Path | None = None,
     on_repair=None,
     on_error=None,
 ) -> None:
@@ -42,9 +79,7 @@ def repair_dataset(
 
     Args:
         input_path: Path of the dataset to repair.
-        output_path: If given, the dataset is copied here and the copy is
-            repaired, leaving the input untouched. If ``None``, the input
-            dataset is repaired in place.
+        output_path: If given, the dataset is copied here and the copy is repaired, leaving the input untouched. If ``None``, the input dataset is repaired in place.
         on_repair: Optional callable invoked with a message string for each
             repaired gap.
         on_error: Optional callable invoked with a message string for each gap
@@ -52,7 +87,7 @@ def repair_dataset(
 
     """
     if output_path is not None:
-        shutil.copytree(input_path, output_path)
+        copy_parquet(input_path, output_path)
         target = output_path
     else:
         target = input_path
