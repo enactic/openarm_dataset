@@ -14,6 +14,8 @@
 
 from pathlib import Path
 import json
+import shutil
+import subprocess
 import numpy as np
 import packaging.version
 import pandas as pd
@@ -215,6 +217,96 @@ def test_packed_video(lerobot_v30_setup):
             / "file-000.mp4"
         )
         assert video_path.exists(), f"Video file for camera {cam} does not exist."
+
+
+def _ffprobe_pts_ticks(video_path: Path) -> tuple[list[int], int]:
+    """Return (sorted PTS in stream time-base ticks, time-base denominator)."""
+    tb = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=time_base",
+            "-of",
+            "default=nk=1:nw=1",
+            str(video_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    _, den = tb.split("/")
+    out = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=pts",
+            "-of",
+            "csv=p=0",
+            str(video_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    pts = sorted(int(x.rstrip(",")) for x in out if x.strip())
+    return pts, int(den)
+
+
+def test_packed_video_uniform_pts(lerobot_v30_setup):
+    """Packed videos must have a strictly uniform i/fps PTS grid.
+
+    Episodes are concatenated into a single video file. If frames drift off the
+    exact 1/fps grid (e.g. from per-segment rounding when muxing separately
+    encoded clips), LeRobot's ``seek_mode="approximate"`` decoder fetches an
+    off-by-one frame and raises ``FrameTimestampError``. A single-pass encode
+    keeps every gap at exactly one frame.
+    """
+    if shutil.which("ffprobe") is None:
+        pytest.skip("ffprobe not available")
+    dataset, lerobot_path = lerobot_v30_setup
+    for cam in dataset.camera_names:
+        video_path = (
+            lerobot_path
+            / "videos"
+            / f"observation.images.{cam}"
+            / "chunk-000"
+            / "file-000.mp4"
+        )
+        pts, den = _ffprobe_pts_ticks(video_path)
+        assert den % FPS == 0, f"{cam}: time-base {den} not divisible by fps {FPS}"
+        expected_gap = den // FPS
+        gaps = {pts[i + 1] - pts[i] for i in range(len(pts) - 1)}
+        assert gaps <= {expected_gap}, (
+            f"{cam}: non-uniform PTS gaps {sorted(gaps)} "
+            f"(expected only {expected_gap} ticks = 1/{FPS}s)"
+        )
+
+
+def test_video_timestamps_exact(lerobot_v30_setup):
+    """from_timestamp/to_timestamp are exact frame-count multiples of 1/fps."""
+    dataset, lerobot_path = lerobot_v30_setup
+    df = pd.read_parquet(
+        lerobot_path / "meta" / "episodes" / "chunk-000" / "file-000.parquet"
+    ).sort_values("episode_index")
+    for cam in dataset.camera_names:
+        image_name = f"observation.images.{cam}"
+        from_col = f"videos/{image_name}/from_timestamp"
+        to_col = f"videos/{image_name}/to_timestamp"
+        for _, row in df.iterrows():
+            span = (row[to_col] - row[from_col]) * FPS
+            np.testing.assert_allclose(span, row["length"], atol=1e-6)
+            # offset must land exactly on the frame grid (no ffprobe-duration drift)
+            np.testing.assert_allclose(
+                round(row[from_col] * FPS), row[from_col] * FPS, atol=1e-6
+            )
 
 
 @_skip_v30_load

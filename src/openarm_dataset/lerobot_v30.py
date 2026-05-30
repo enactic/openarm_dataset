@@ -17,7 +17,6 @@
 from pathlib import Path
 
 import json
-import subprocess
 import tempfile
 import numpy as np
 import pandas as pd
@@ -35,8 +34,6 @@ from .lerobot_v21 import (
     _describe_scalar,
     _describe_vector,
     _encode_mp4,
-    _escape_concat_path,
-    _get_ffmpeg_exe,
     _get_image_name_from_key,
 )
 
@@ -65,53 +62,6 @@ def _get_parquet_size_in_mb(path: Path) -> float:
 
 def _get_file_size_in_mb(path: Path) -> float:
     return path.stat().st_size / (1024**2)
-
-
-def _get_video_duration_in_s(path: Path) -> float:
-    """Get video duration using ffprobe."""
-    cmd = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        str(path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return float(result.stdout.strip())
-
-
-def _concatenate_mp4_files(input_paths: list[Path], output_path: Path):
-    """Concatenate multiple MP4 files using ffmpeg concat demuxer (no re-encode)."""
-    ffmpeg_exe = _get_ffmpeg_exe()
-    if ffmpeg_exe is None:
-        raise RuntimeError("FFmpeg executable not found.")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".ffconcat", delete=False) as tmp:
-        tmp.write("ffconcat version 1.0\n")
-        for p in input_paths:
-            tmp.write(f"file '{_escape_concat_path(p)}'\n")
-        tmp_path = tmp.name
-    cmd = [
-        ffmpeg_exe,
-        "-y",
-        "-nostdin",
-        "-loglevel",
-        "warning",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        tmp_path,
-        "-c",
-        "copy",
-        str(output_path),
-    ]
-    subprocess.run(cmd, check=True, capture_output=True)
-    Path(tmp_path).unlink(missing_ok=True)
 
 
 def _write_packed_parquet(
@@ -196,7 +146,20 @@ def _write_packed_parquet(
 def _write_packed_videos(
     dataset, records, output_dir, fps, remap_episode_index, tmp_dir
 ):
-    """Encode per-episode MP4s, then concatenate into packed files by size limit.
+    """Encode packed video files, one ffmpeg pass per file (no mp4 concat).
+
+    Each output ``file-XXX.mp4`` is encoded in a single pass directly from the
+    raw frames of the episodes assigned to it. Encoding the whole file at once
+    (rather than concatenating separately-encoded per-episode clips with
+    ``-c copy``) guarantees a strictly uniform ``i / fps`` presentation-timestamp
+    grid: there are no segment boundaries where the concat demuxer can round a
+    frame's PTS by a few timebase ticks. That rounding is what makes LeRobot's
+    ``seek_mode="approximate"`` decoder fetch an off-by-one frame and raise
+    ``FrameTimestampError``.
+
+    Because the grid is exact, ``from_timestamp`` / ``to_timestamp`` are derived
+    from cumulative frame counts within the file instead of measured ffprobe
+    durations.
 
     Returns a list of dicts with per-episode video metadata.
     """
@@ -205,55 +168,65 @@ def _write_packed_videos(
     for camera_key in dataset.camera_names:
         image_name = _get_image_name_from_key(camera_key)
 
-        # Phase 1: encode individual episode MP4s into tmp_dir
-        ep_mp4_paths: list[Path] = []
-        for idx, (episode_index, _, _, _, sampled_cameras) in enumerate(records):
+        # Phase 1: encode each episode once into tmp_dir purely to measure its
+        # encoded size, which drives the size-based packing below.
+        ep_frame_lists: list[list[Path]] = []
+        ep_sizes_in_mb: list[float] = []
+        for episode_index, num_frames, _, _, sampled_cameras in records:
             lerobot_episode_index = remap_episode_index[episode_index]
             frames = sampled_cameras[camera_key]
-            ep_mp4 = tmp_dir / f"{image_name}_ep{lerobot_episode_index:06d}.mp4"
+            if len(frames) != num_frames:
+                raise ValueError(
+                    f"Camera '{camera_key}' episode {episode_index} has "
+                    f"{len(frames)} video frames but the data table has "
+                    f"{num_frames} frames; video/data are out of sync."
+                )
+            ep_mp4 = tmp_dir / f"{image_name}_size_ep{lerobot_episode_index:06d}.mp4"
             _encode_mp4(frames, fps, ep_mp4, verbose=False)
-            ep_mp4_paths.append(ep_mp4)
+            ep_sizes_in_mb.append(_get_file_size_in_mb(ep_mp4))
+            ep_mp4.unlink()
+            ep_frame_lists.append(frames)
 
-        # Phase 2: pack into file-XXX.mp4 by size limit
+        # Phase 2: pack episodes into file-XXX by size, single-pass encode each.
         chunk_idx = 0
         file_idx = 0
         size_in_mb = 0.0
-        duration_in_s = 0.0
-        paths_to_cat: list[Path] = []
-        # Temporary storage for chunk/file assignment per episode
+        frames_in_file = 0
+        pending_frames: list[Path] = []
         ep_assignments: list[tuple[int, int, float, float]] = []
 
-        for idx, ep_mp4 in enumerate(ep_mp4_paths):
-            ep_size = _get_file_size_in_mb(ep_mp4)
-            ep_duration = _get_video_duration_in_s(ep_mp4)
+        for idx, frames in enumerate(ep_frame_lists):
+            ep_size = ep_sizes_in_mb[idx]
 
-            if size_in_mb + ep_size >= VIDEO_FILES_SIZE_IN_MB and paths_to_cat:
+            if size_in_mb + ep_size >= VIDEO_FILES_SIZE_IN_MB and pending_frames:
                 out_path = output_dir / VIDEO_PATH.format(
                     video_key=image_name,
                     chunk_index=chunk_idx,
                     file_index=file_idx,
                 )
-                _concatenate_mp4_files(paths_to_cat, out_path)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                _encode_mp4(pending_frames, fps, out_path, verbose=False)
 
                 chunk_idx, file_idx = _update_chunk_file_indices(chunk_idx, file_idx)
                 size_in_mb = 0.0
-                duration_in_s = 0.0
-                paths_to_cat = []
+                frames_in_file = 0
+                pending_frames = []
 
-            from_ts = duration_in_s
-            to_ts = duration_in_s + ep_duration
+            from_ts = frames_in_file / float(fps)
+            to_ts = (frames_in_file + len(frames)) / float(fps)
             ep_assignments.append((chunk_idx, file_idx, from_ts, to_ts))
-            paths_to_cat.append(ep_mp4)
+            pending_frames.extend(frames)
             size_in_mb += ep_size
-            duration_in_s += ep_duration
+            frames_in_file += len(frames)
 
-        if paths_to_cat:
+        if pending_frames:
             out_path = output_dir / VIDEO_PATH.format(
                 video_key=image_name,
                 chunk_index=chunk_idx,
                 file_index=file_idx,
             )
-            _concatenate_mp4_files(paths_to_cat, out_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            _encode_mp4(pending_frames, fps, out_path, verbose=False)
 
         for idx, (c, f, from_ts, to_ts) in enumerate(ep_assignments):
             episodes_video_meta[idx][f"videos/{image_name}/chunk_index"] = c
