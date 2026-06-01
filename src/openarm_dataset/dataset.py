@@ -291,6 +291,7 @@ class Dataset:
         return list(sampler.sample(self, episode_index, hz))
 
     def get_embodiment_attributes(self, type_: str, episode_index: int):
+        """Return the list of embodiment attributes for the given type and episode."""
         attributes = []
         for name, embodiment in self.meta.equipment.embodiments.items():
             # Unversioned dataset.
