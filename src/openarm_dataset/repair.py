@@ -147,17 +147,11 @@ def _write_parquet_atomically(df: pd.DataFrame, path: pathlib.Path) -> None:
         dir=path.parent,
         prefix=f".{path.name}.",
         suffix=".parquet",
-        delete=False,
     ) as tmp_file:
         tmp_path = pathlib.Path(tmp_file.name)
-
-    try:
         df.to_parquet(tmp_path, index=False)
         tmp_path.chmod(original_mode)
         tmp_path.replace(path)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
 
 
 def _repair_column(series: pd.Series) -> tuple[int, int, list | None]:
