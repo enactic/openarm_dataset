@@ -29,14 +29,14 @@ import tempfile
 import numpy as np
 import pandas as pd
 
-import openarm_dataset
+from .dataset import Dataset
 
 
-def copy_parquet(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
+def copy_dataset(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     """Copy an OpenArm dataset, images are symlinked instead of copied."""
     output_path.mkdir(parents=True, exist_ok=True)
 
-    src_dataset = openarm_dataset.Dataset(input_path)
+    src_dataset = Dataset(input_path)
     # copy metadata.
     src_dataset.meta.write(pathlib.Path(output_path))
 
@@ -88,12 +88,12 @@ def repair_dataset(
 
     """
     if output_path is not None:
-        copy_parquet(input_path, output_path)
+        copy_dataset(input_path, output_path)
         target = output_path
     else:
         target = input_path
 
-    dataset = openarm_dataset.Dataset(target)
+    dataset = Dataset(target)
     checked_paths = set()
     for episode_index in range(dataset.num_episodes):
         for type_name in ("obs", "action"):

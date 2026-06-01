@@ -16,13 +16,13 @@ import math
 import subprocess
 import sys
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
+import shutil
 
 from openarm_dataset.dataset import Dataset
 from openarm_dataset.repair import repair_dataset
-from openarm_dataset.repair import copy_parquet
+
 
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.3.0"
 STATE_REL = Path("episodes") / "0" / "obs" / "arms" / "left" / "state.parquet"
@@ -30,7 +30,7 @@ STATE_REL = Path("episodes") / "0" / "obs" / "arms" / "left" / "state.parquet"
 
 def _copy_dataset(tmp_path):
     dst = tmp_path / "dataset"
-    copy_parquet(DATASET_DIR, dst)
+    shutil.copytree(DATASET_DIR, dst)
     return dst
 
 
