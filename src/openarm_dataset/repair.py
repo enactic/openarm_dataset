@@ -32,7 +32,7 @@ import pandas as pd
 from .dataset import Dataset
 
 
-def copy_dataset(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
+def _copy_dataset(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     """Copy an OpenArm dataset, images are symlinked instead of copied."""
     output_path.mkdir(parents=True, exist_ok=True)
 
