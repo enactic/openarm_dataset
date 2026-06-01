@@ -88,7 +88,7 @@ def repair_dataset(
 
     """
     if output_path is not None:
-        copy_dataset(input_path, output_path)
+        _copy_dataset(input_path, output_path)
         target = output_path
     else:
         target = input_path
