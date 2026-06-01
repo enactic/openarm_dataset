@@ -73,7 +73,7 @@ class Dataset:
         checked_paths = set()
         for episode_index in range(self.num_episodes):
             for type_name in ("obs", "action"):
-                for attribute in self._get_embodiment_attributes(
+                for attribute in self.get_embodiment_attributes(
                     type_name, episode_index
                 ):
                     path = attribute["path"]
@@ -290,7 +290,7 @@ class Dataset:
         sampler = Sampler()
         return list(sampler.sample(self, episode_index, hz))
 
-    def _get_embodiment_attributes(self, type_: str, episode_index: int):
+    def get_embodiment_attributes(self, type_: str, episode_index: int):
         attributes = []
         for name, embodiment in self.meta.equipment.embodiments.items():
             # Unversioned dataset.
@@ -355,7 +355,7 @@ class Dataset:
         cutoff: float = None,
     ) -> dict[str, pd.DataFrame]:
         values = {}
-        for attribute in self._get_embodiment_attributes(type_, episode_index):
+        for attribute in self.get_embodiment_attributes(type_, episode_index):
             values[attribute["key"]] = self._load_embodiment_value(
                 attribute,
                 use_unixtime=use_unixtime,
@@ -440,7 +440,7 @@ class Dataset:
     def _write_embodiment_data(self, output: Path, episode_index: int):
         written_state_paths = set()
         for type_ in ["action", "obs"]:
-            for attribute in self._get_embodiment_attributes(type_, episode_index):
+            for attribute in self.get_embodiment_attributes(type_, episode_index):
                 embodiment = attribute["embodiment"]
                 component = attribute["component"]
                 name = attribute["name"]

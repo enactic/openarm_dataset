@@ -97,7 +97,7 @@ def repair_dataset(
     checked_paths = set()
     for episode_index in range(dataset.num_episodes):
         for type_name in ("obs", "action"):
-            for attribute in dataset._get_embodiment_attributes(
+            for attribute in dataset.get_embodiment_attributes(
                 type_name, episode_index
             ):
                 path = attribute["path"]
