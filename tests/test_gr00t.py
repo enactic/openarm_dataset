@@ -43,7 +43,7 @@ EXPECTED_MODALITY = {
         "head": {"original_key": "observation.images.head"},
     },
     "annotation": {
-        "human.task_description": {"original_key": "task_index"},
+        "human.action.task_description": {"original_key": "task_index"},
     },
 }
 

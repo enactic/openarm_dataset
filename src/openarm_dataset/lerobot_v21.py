@@ -698,7 +698,7 @@ def _write_modality_json(dataset: Dataset, output_dir: Path):
             for camera_name in dataset.camera_names
         },
         "annotation": {
-            "human.task_description": {"original_key": "task_index"},
+            "human.action.task_description": {"original_key": "task_index"},
         },
     }
     modality_path = output_dir / METADATA_DIR / "modality.json"
