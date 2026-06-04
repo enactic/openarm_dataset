@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Conversion script for OpenArm Dataset to LeRobot v2.1 format."""
+"""Conversion script for OpenArm Dataset to LeRobot v2.1 and GR00T LeRobot formats."""
 
 from pathlib import Path
 import pandas as pd
@@ -756,3 +756,28 @@ def to_lerobotv21(
         remap_episode_index,
         remap_task_index,
     )
+
+
+def to_gr00t(
+    dataset: Dataset,
+    output_dir: str | Path,
+    fps: int = 30,
+    train_split: float = 0.8,
+    smoothing_cutoff: float = 1.0,
+    success_only: bool = False,
+) -> None:
+    """Convert the given dataset to GR00T LeRobot format.
+
+    GR00T LeRobot is LeRobot v2.1 plus a meta/modality.json file describing
+    the state/action layout, videos, and annotations.
+    """
+    output_dir = Path(output_dir)
+    to_lerobotv21(
+        dataset,
+        output_dir,
+        fps=fps,
+        train_split=train_split,
+        smoothing_cutoff=smoothing_cutoff,
+        success_only=success_only,
+    )
+    _write_modality_json(dataset, output_dir)
