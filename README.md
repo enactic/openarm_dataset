@@ -124,15 +124,17 @@ Convert a dataset:
 
 ```bash
 openarm-dataset-convert <input> <output> \
-    [--format {openarm,lerobot_v2.1}] \
-    [--fps INT]                # default 30 (lerobot only) \
-    [--smoothing-cutoff FLOAT] # default 1.0 (lerobot only) \
-    [--train-split FLOAT]      # default 0.8 (lerobot only) \
-    [--success-only]           # lerobot only
+    [--format {openarm,lerobot_v2.1,gr00t}] \
+    [--fps INT]                # default 30 (lerobot/gr00t only) \
+    [--smoothing-cutoff FLOAT] # default 1.0 (lerobot/gr00t only) \
+    [--train-split FLOAT]      # default 0.8 (lerobot/gr00t only) \
+    [--success-only]           # lerobot/gr00t only
 ```
 
 The `--fps`, `--smoothing-cutoff`, `--train-split`, and `--success-only`
-flags apply only when `--format lerobot_v2.1`.
+flags apply only when `--format lerobot_v2.1` or `--format gr00t`.
+The `gr00t` format produces a LeRobot v2.1 dataset plus a GR00T-compatible
+`meta/modality.json` (see [Isaac-GR00T data preparation](https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/data_preparation.md)).
 
 ## Development
 
