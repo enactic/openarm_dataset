@@ -27,6 +27,7 @@ from PIL import Image
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
+METADATA_DIR = "meta"
 
 # config for video encoding
 FFMPEG_CODEC = "libx264"
@@ -429,7 +430,6 @@ def _write_metadata(
     remap_episode_index,
     remap_task_index,
 ):
-    METADATA_DIR = "meta"
     episodes_metadata = []
     episodes_stats = []
 
@@ -645,6 +645,66 @@ def _write_metadata(
     info_path = output_dir / METADATA_DIR / "info.json"
     with info_path.open("w", encoding="utf-8") as f:
         json.dump(info, f, ensure_ascii=False, indent=4)
+
+
+def _collect_modality_ranges(dataset: Dataset):
+    """Build named GR00T modality slices into the concatenated state/action vectors.
+
+    Follows the same iteration order as _collect_keys_and_joint_names so the
+    ranges always match the parquet layout. A trailing "gripper" joint is
+    split into its own entry, following GR00T conventions.
+    """
+    ranges = {}
+    offset = 0
+    for name, embodiment in dataset.meta.equipment.embodiments.items():
+        # naive singular: "arms" -> "arm"; embodiment set is closed (see metadata.py)
+        base = name.removesuffix("s")
+        components = embodiment.components if embodiment.components else (None,)
+        for component in components:
+            prefix = f"{component}_" if component else ""
+            for _attribute in embodiment.attributes:
+                key = f"{prefix}{base}"
+                if key in ranges:
+                    raise NotImplementedError(
+                        f"modality.json does not support multi-attribute embodiment {name!r}"
+                    )
+                joints = embodiment.joints
+                if joints and joints[-1] == "gripper":
+                    ranges[key] = {
+                        "start": offset,
+                        "end": offset + len(joints) - 1,
+                    }
+                    ranges[f"{prefix}gripper"] = {
+                        "start": offset + len(joints) - 1,
+                        "end": offset + len(joints),
+                    }
+                else:
+                    ranges[key] = {
+                        "start": offset,
+                        "end": offset + len(joints),
+                    }
+                offset += len(joints)
+    return ranges
+
+
+def _write_modality_json(dataset: Dataset, output_dir: Path):
+    """Write GR00T meta/modality.json describing the dataset layout."""
+    ranges = _collect_modality_ranges(dataset)
+    modality = {
+        "state": ranges,
+        "action": ranges,
+        "video": {
+            camera_name: {"original_key": _get_image_name_from_key(camera_name)}
+            for camera_name in dataset.camera_names
+        },
+        "annotation": {
+            "human.task_description": {"original_key": "task_index"},
+        },
+    }
+    modality_path = output_dir / METADATA_DIR / "modality.json"
+    modality_path.parent.mkdir(parents=True, exist_ok=True)
+    with modality_path.open("w", encoding="utf-8") as f:
+        json.dump(modality, f, ensure_ascii=False, indent=4)
 
 
 def to_lerobotv21(
