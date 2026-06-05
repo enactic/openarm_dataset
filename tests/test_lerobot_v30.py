@@ -78,7 +78,7 @@ def _flatten_channels(stats_field) -> np.ndarray:
 
 
 def test_info_json(lerobot_v30_setup):
-    dataset, lerobot_path = lerobot_v30_setup
+    _, lerobot_path = lerobot_v30_setup
     info_path = lerobot_path / "meta" / "info.json"
     assert info_path.exists()
     with open(info_path) as f:

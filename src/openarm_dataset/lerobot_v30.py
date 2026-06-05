@@ -20,6 +20,7 @@ import json
 import tempfile
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from .dataset import Dataset
 from .lerobot_v21 import (
@@ -80,7 +81,9 @@ def _write_packed_parquet(
     pending_dfs: list[pd.DataFrame] = []
     episodes_data_meta: list[dict] = []
 
-    for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
+    for episode_index, num_frames, sampled_obs, sampled_actions, _ in tqdm(
+        records, desc="Writing data parquet", unit="ep"
+    ):
         lerobot_episode_index = remap_episode_index[episode_index]
         task_index = remap_task_index[
             int(dataset.meta.episodes[episode_index]["task_index"])
@@ -143,23 +146,15 @@ def _write_packed_parquet(
     return episodes_data_meta, gidx
 
 
-def _write_packed_videos(
-    dataset, records, output_dir, fps, remap_episode_index, tmp_dir
-):
+def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index):
     """Encode packed video files, one ffmpeg pass per file (no mp4 concat).
 
     Each output ``file-XXX.mp4`` is encoded in a single pass directly from the
     raw frames of the episodes assigned to it. Encoding the whole file at once
     (rather than concatenating separately-encoded per-episode clips with
     ``-c copy``) guarantees a strictly uniform ``i / fps`` presentation-timestamp
-    grid: there are no segment boundaries where the concat demuxer can round a
-    frame's PTS by a few timebase ticks. That rounding is what makes LeRobot's
-    ``seek_mode="approximate"`` decoder fetch an off-by-one frame and raise
-    ``FrameTimestampError``.
-
-    Because the grid is exact, ``from_timestamp`` / ``to_timestamp`` are derived
-    from cumulative frame counts within the file instead of measured ffprobe
-    durations.
+    grid.
+    File sizes track ``VIDEO_FILES_SIZE_IN_MB`` approximately rather than exactly.
 
     Returns a list of dicts with per-episode video metadata.
     """
@@ -168,12 +163,10 @@ def _write_packed_videos(
     for camera_key in dataset.camera_names:
         image_name = _get_image_name_from_key(camera_key)
 
-        # Phase 1: encode each episode once into tmp_dir purely to measure its
-        # encoded size, which drives the size-based packing below.
+        # Collect frame lists and their source sizes (no encoding here).
         ep_frame_lists: list[list[Path]] = []
-        ep_sizes_in_mb: list[float] = []
+        ep_src_sizes_in_mb: list[float] = []
         for episode_index, num_frames, _, _, sampled_cameras in records:
-            lerobot_episode_index = remap_episode_index[episode_index]
             frames = sampled_cameras[camera_key]
             if len(frames) != num_frames:
                 raise ValueError(
@@ -181,24 +174,33 @@ def _write_packed_videos(
                     f"{len(frames)} video frames but the data table has "
                     f"{num_frames} frames; video/data are out of sync."
                 )
-            ep_mp4 = tmp_dir / f"{image_name}_size_ep{lerobot_episode_index:06d}.mp4"
-            _encode_mp4(frames, fps, ep_mp4, verbose=False)
-            ep_sizes_in_mb.append(_get_file_size_in_mb(ep_mp4))
-            ep_mp4.unlink()
             ep_frame_lists.append(frames)
+            ep_src_sizes_in_mb.append(sum(f.stat().st_size for f in frames) / (1024**2))
 
-        # Phase 2: pack episodes into file-XXX by size, single-pass encode each.
+        # Calibrate the compression ratio by encoding the first episode once
+        # into a temporary file, mirroring the parquet size estimation above.
+        compression_ratio = 1.0
+        if ep_src_sizes_in_mb and ep_src_sizes_in_mb[0] > 0:
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                tmp_mp4 = Path(tmp.name)
+            _encode_mp4(ep_frame_lists[0], fps, tmp_mp4, verbose=False)
+            compression_ratio = _get_file_size_in_mb(tmp_mp4) / ep_src_sizes_in_mb[0]
+            tmp_mp4.unlink()
+
+        # Pack episodes into file-XXX by estimated size. The ratio is refined from each packed file actually written.
         chunk_idx = 0
         file_idx = 0
-        size_in_mb = 0.0
+        src_in_mb = 0.0
         frames_in_file = 0
         pending_frames: list[Path] = []
         ep_assignments: list[tuple[int, int, float, float]] = []
 
-        for idx, frames in enumerate(ep_frame_lists):
-            ep_size = ep_sizes_in_mb[idx]
+        for idx, frames in enumerate(
+            tqdm(ep_frame_lists, desc=f"Encoding videos/{image_name}", unit="ep")
+        ):
+            est_size_in_mb = (src_in_mb + ep_src_sizes_in_mb[idx]) * compression_ratio
 
-            if size_in_mb + ep_size >= VIDEO_FILES_SIZE_IN_MB and pending_frames:
+            if est_size_in_mb >= VIDEO_FILES_SIZE_IN_MB and pending_frames:
                 out_path = output_dir / VIDEO_PATH.format(
                     video_key=image_name,
                     chunk_index=chunk_idx,
@@ -206,9 +208,11 @@ def _write_packed_videos(
                 )
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 _encode_mp4(pending_frames, fps, out_path, verbose=False)
+                if src_in_mb > 0:
+                    compression_ratio = _get_file_size_in_mb(out_path) / src_in_mb
 
                 chunk_idx, file_idx = _update_chunk_file_indices(chunk_idx, file_idx)
-                size_in_mb = 0.0
+                src_in_mb = 0.0
                 frames_in_file = 0
                 pending_frames = []
 
@@ -216,7 +220,7 @@ def _write_packed_videos(
             to_ts = (frames_in_file + len(frames)) / float(fps)
             ep_assignments.append((chunk_idx, file_idx, from_ts, to_ts))
             pending_frames.extend(frames)
-            size_in_mb += ep_size
+            src_in_mb += ep_src_sizes_in_mb[idx]
             frames_in_file += len(frames)
 
         if pending_frames:
@@ -376,7 +380,6 @@ def _write_episodes_and_stats(
     remap_task_index,
     episodes_data_meta,
     episodes_video_meta,
-    total_frames,
 ):
     """Write episodes parquet with metadata + stats, and aggregated stats.json."""
     all_episode_dicts: list[dict] = []
@@ -389,7 +392,7 @@ def _write_episodes_and_stats(
         sampled_obs,
         sampled_actions,
         sampled_cameras,
-    ) in enumerate(records):
+    ) in enumerate(tqdm(records, desc="Computing episode stats", unit="ep")):
         lerobot_episode_index = remap_episode_index[episode_index]
         lerobot_task_index = remap_task_index[
             int(dataset.meta.episodes[episode_index]["task_index"])
@@ -589,15 +592,9 @@ def to_lerobotv30(
         dataset, records, output_dir, fps, remap_episode_index, remap_task_index
     )
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        episodes_video_meta = _write_packed_videos(
-            dataset,
-            records,
-            output_dir,
-            fps,
-            remap_episode_index,
-            Path(tmp_dir),
-        )
+    episodes_video_meta = _write_packed_videos(
+        dataset, records, output_dir, fps, remap_episode_index
+    )
 
     _write_episodes_and_stats(
         dataset,
@@ -608,7 +605,6 @@ def to_lerobotv30(
         remap_task_index,
         episodes_data_meta,
         episodes_video_meta,
-        total_frames,
     )
     _write_tasks_parquet(dataset, remap_task_index, output_dir)
     _write_info_json(

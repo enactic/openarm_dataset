@@ -31,6 +31,7 @@ dependencies = [
     "pyarrow",
     "pyyaml",
     "scipy",
+    "tqdm",
 ]
 
 [project.optional-dependencies]
