@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
+
+pytest.importorskip("lerobot")
+
 from pathlib import Path
 import json
 import shutil
@@ -19,7 +23,6 @@ import subprocess
 import numpy as np
 import packaging.version
 import pandas as pd
-import pytest
 from PIL import Image
 from openarm_dataset import Dataset
 from openarm_dataset.lerobot_v21 import _sample_image_indices
@@ -201,8 +204,7 @@ def test_packed_data(lerobot_v30_setup):
     lerobot_obs = df[df["episode_index"] == 0]["observation.state"].iloc[0]
 
     assert all(
-        abs(lerobot_obs[i] - sample_0_obs[i]) < 1e-6
-        for i in range(len(sample_0_obs))
+        abs(lerobot_obs[i] - sample_0_obs[i]) < 1e-6 for i in range(len(sample_0_obs))
     )
 
 
