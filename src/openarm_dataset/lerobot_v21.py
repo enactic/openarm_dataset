@@ -669,7 +669,7 @@ def _collect_modality_ranges(dataset: Dataset):
                         f"modality.json does not support multi-attribute embodiment {name!r}"
                     )
                 joints = embodiment.joints
-                if joints and joints[-1] == "gripper":
+                if joints[-1] == "gripper":
                     ranges[key] = {
                         "start": offset,
                         "end": offset + len(joints) - 1,
