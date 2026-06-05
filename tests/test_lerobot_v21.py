@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
+
+pytest.importorskip("lerobot")
+
 from pathlib import Path
 import json
 import numpy as np
 import pandas as pd
-import pytest
 from PIL import Image
 from openarm_dataset import Dataset
 from openarm_dataset.lerobot_v21 import _sample_image_indices

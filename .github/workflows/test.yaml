@@ -25,6 +25,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        extra:
+          - lerobot-dataset-v2.1
+          - rerun
     steps:
       - uses: actions/checkout@v6
       - name: Install uv
@@ -39,6 +45,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y -V ffmpeg
       - name: Sync dependencies
-        run: uv sync -p 3.12 --extra test
+        run: uv sync -p 3.12 --extra ${{ matrix.extra }}
       - name: Run pytest
-        run: uv run pytest
+        run: uv run pytest -rs

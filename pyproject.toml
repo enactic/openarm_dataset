@@ -34,8 +34,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = [
+"lerobot-dataset-v2.1" = [
+    # lerobot 0.3.3 pins rerun-sdk <0.23 and reads the v2.1 dataset format.
+    # (Newer versions can no longer read the v2.1 dataset format.)
     "lerobot == 0.3.3",
+]
+rerun = [
+    # The API differs by version; the latest API requires 0.23+.
+    "rerun-sdk >= 0.23",
 ]
 
 [project.urls]
@@ -63,6 +69,17 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+# The lerobot extra (rerun-sdk <0.23) and the rerun extra (>=0.23) cannot be
+# installed together. Declaring them as conflicting lets uv build a valid lock
+# and resolve each extra separately.
+conflicts = [
+    [
+        { extra = "lerobot-dataset-v2.1" },
+        { extra = "rerun" },
+    ],
+]
 
 [tool.ruff.lint]
 extend-select = [
