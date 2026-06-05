@@ -286,3 +286,12 @@ def test_success_only(tmp_path):
     assert lerobot_dataset.num_episodes == 1, (
         "Number of episodes in LeRobotDataset does not match the expected number of success episodes."
     )
+
+
+def test_lerobot_v21_writes_no_modality_json(tmp_path):
+    dataset = Dataset(DATASET_0_3_0_PATH)
+    dataset.set_smoothing(1.0)
+    dataset.write(
+        tmp_path, format="lerobot_v2.1", fps=FPS, train_split=0.8, success_only=False
+    )
+    assert not (tmp_path / "meta" / "modality.json").exists()

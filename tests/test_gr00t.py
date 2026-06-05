@@ -16,10 +16,6 @@ from pathlib import Path
 import json
 
 from openarm_dataset import Dataset
-from openarm_dataset.lerobot_v21 import (
-    _collect_keys_and_joint_names,
-    _write_modality_json,
-)
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
 DATASET_0_3_0_PATH = FIXTURE_DIR / "dataset_0.3.0"
@@ -48,29 +44,6 @@ EXPECTED_MODALITY = {
 }
 
 
-def test_write_modality_json(tmp_path):
-    dataset = Dataset(DATASET_0_3_0_PATH)
-    _write_modality_json(dataset, tmp_path)
-    with open(tmp_path / "meta" / "modality.json") as f:
-        modality = json.load(f)
-    assert modality == EXPECTED_MODALITY
-
-
-def test_modality_ranges_are_contiguous_and_cover_all_joints(tmp_path):
-    dataset = Dataset(DATASET_0_3_0_PATH)
-    _, joint_names = _collect_keys_and_joint_names(dataset)
-    _write_modality_json(dataset, tmp_path)
-    with open(tmp_path / "meta" / "modality.json") as f:
-        modality = json.load(f)
-    for block in ("state", "action"):
-        assert len(modality[block]) == len(EXPECTED_RANGES)
-        ranges = list(modality[block].values())
-        assert ranges[0]["start"] == 0
-        for prev, cur in zip(ranges, ranges[1:]):
-            assert cur["start"] == prev["end"]
-        assert ranges[-1]["end"] == len(joint_names)
-
-
 def test_gr00t_write(tmp_path):
     dataset = Dataset(DATASET_0_3_0_PATH)
     dataset.set_smoothing(1.0)
@@ -96,11 +69,11 @@ def test_gr00t_write(tmp_path):
         modality = json.load(f)
     assert modality == EXPECTED_MODALITY
 
-
-def test_lerobot_v21_writes_no_modality_json(tmp_path):
-    dataset = Dataset(DATASET_0_3_0_PATH)
-    dataset.set_smoothing(1.0)
-    dataset.write(
-        tmp_path, format="lerobot_v2.1", fps=FPS, train_split=0.8, success_only=False
-    )
-    assert not (tmp_path / "meta" / "modality.json").exists()
+    # test modality ranges are contiguous
+    for block in ("state", "action"):
+        assert len(modality[block]) == len(EXPECTED_RANGES)
+        ranges = list(modality[block].values())
+        assert ranges[0]["start"] == 0
+        for prev, cur in zip(ranges, ranges[1:]):
+            assert cur["start"] == prev["end"]
+        assert ranges[-1]["end"] == 17  # total number of joints in the dataset
