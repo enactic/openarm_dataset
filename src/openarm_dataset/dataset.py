@@ -427,6 +427,10 @@ class Dataset:
             from .lerobot_v21 import to_lerobotv21
 
             return to_lerobotv21(self, output, **options)
+        elif format == "gr00t":
+            from .lerobot_v21 import to_gr00t
+
+            return to_gr00t(self, output, **options)
         else:
             raise ValueError(f"Unsupported format: {format}")
 
