@@ -164,8 +164,8 @@ def _write_episodes(
 ) -> None:
     episode_counter = 0
     for ds in datasets:
-        for ep_idx in range(ds.num_episodes):
-            src = ds.episode_path(ep_idx)
+        for episode in ds.meta.episodes:
+            src = ds.episode_path(episode)
             dst = output / "episodes" / str(episode_counter)
             if symlink:
                 dst.parent.mkdir(parents=True, exist_ok=True)

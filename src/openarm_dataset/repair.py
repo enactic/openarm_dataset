@@ -41,9 +41,9 @@ def _copy_dataset(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     src_dataset.meta.write(pathlib.Path(output_path))
 
     # save episodes
-    for episode_index in range(src_dataset.num_episodes):
+    for episode in src_dataset.meta.episodes:
         episode_path = src_dataset.episode_path(
-            episode_index
+            episode
         )  # root / episodes / 0 / {cameras, obs, action}
         for item in episode_path.iterdir():
             if item.is_dir() and item.name == "cameras":

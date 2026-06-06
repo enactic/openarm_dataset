@@ -136,12 +136,11 @@ class Dataset:
     def _episode_id(self, index: int) -> str:
         return self.meta.episodes[index]["id"]
 
-    def episode_path(self, episode_index: int = None) -> Path:
+    def episode_path(self, episode: dict = None) -> Path:
         """Return the path of the episode."""
-        if episode_index is None:
+        if episode is None:
             return self.root_path
-        episode_id = self._episode_id(episode_index)
-        return self.root_path / "episodes" / episode_id
+        return self.root_path / "episodes" / episode["id"]
 
     def load_obs(
         self,
@@ -240,7 +239,8 @@ class Dataset:
         """
         if name not in self.camera_names:
             raise KeyError(f"Camera {name} not found. Available: {self.camera_names}")
-        base_path = self.episode_path(episode_index)
+        # TODO: make this method accept an `episode` instead of an `episode_index`.
+        base_path = self.episode_path(self.meta.episodes[episode_index])
         # Unversioned dataset. This is for backward compatibility.
         if self.meta.version is None:
             path = base_path / f"{name}_image"
@@ -292,14 +292,16 @@ class Dataset:
 
     def get_embodiment_attributes(self, type_: str, episode_index: int):
         """Return the list of embodiment attributes for the given type and episode."""
+        # TODO: make this method accept an `episode` instead of an `episode_index`.
+        episode = self.meta.episodes[episode_index]
         attributes = []
         for name, embodiment in self.meta.equipment.embodiments.items():
             # Unversioned dataset.
             # This is for backward compatibility.
             if self.meta.version is None:
-                base_path = self.episode_path(episode_index) / type_
+                base_path = self.episode_path(episode) / type_
             else:
-                base_path = self.episode_path(episode_index) / type_ / name
+                base_path = self.episode_path(episode) / type_ / name
             if embodiment.components:
                 for component in embodiment.components:
                     state_path = base_path / component / "state.parquet"
