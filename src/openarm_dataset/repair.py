@@ -95,11 +95,9 @@ def repair_dataset(
 
     dataset = Dataset(target)
     checked_paths = set()
-    for episode_index in range(dataset.num_episodes):
+    for episode in dataset.meta.episodes:
         for type_name in ("obs", "action"):
-            for attribute in dataset.get_embodiment_attributes(
-                type_name, episode_index
-            ):
+            for attribute in dataset.get_embodiment_attributes(type_name, episode):
                 path = attribute["path"]
                 if path in checked_paths or not path.exists():
                     continue

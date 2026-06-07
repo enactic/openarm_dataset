@@ -71,11 +71,9 @@ class Dataset:
         """
         valid = True
         checked_paths = set()
-        for episode_index in range(self.num_episodes):
+        for episode in self.meta.episodes:
             for type_name in ("obs", "action"):
-                for attribute in self.get_embodiment_attributes(
-                    type_name, episode_index
-                ):
+                for attribute in self.get_embodiment_attributes(type_name, episode):
                     path = attribute["path"]
                     if path in checked_paths or not path.exists():
                         continue
@@ -290,10 +288,8 @@ class Dataset:
         sampler = Sampler()
         return list(sampler.sample(self, episode_index, hz))
 
-    def get_embodiment_attributes(self, type_: str, episode_index: int):
+    def get_embodiment_attributes(self, type_: str, episode: dict):
         """Return the list of embodiment attributes for the given type and episode."""
-        # TODO: make this method accept an `episode` instead of an `episode_index`.
-        episode = self.meta.episodes[episode_index]
         attributes = []
         for name, embodiment in self.meta.equipment.embodiments.items():
             # Unversioned dataset.
@@ -358,7 +354,9 @@ class Dataset:
         cutoff: float = None,
     ) -> dict[str, pd.DataFrame]:
         values = {}
-        for attribute in self.get_embodiment_attributes(type_, episode_index):
+        # TODO: make this method accept an `episode` instead of an `episode_index`.
+        episode = self.meta.episodes[episode_index]
+        for attribute in self.get_embodiment_attributes(type_, episode):
             values[attribute["key"]] = self._load_embodiment_value(
                 attribute,
                 use_unixtime=use_unixtime,
@@ -446,8 +444,10 @@ class Dataset:
 
     def _write_embodiment_data(self, output: Path, episode_index: int):
         written_state_paths = set()
+        # TODO: make this method accept an `episode` instead of an `episode_index`.
+        episode = self.meta.episodes[episode_index]
         for type_ in ["action", "obs"]:
-            for attribute in self.get_embodiment_attributes(type_, episode_index):
+            for attribute in self.get_embodiment_attributes(type_, episode):
                 embodiment = attribute["embodiment"]
                 component = attribute["component"]
                 name = attribute["name"]
