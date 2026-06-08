@@ -179,7 +179,9 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
             with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
                 tmp_mp4 = Path(tmp.name)
                 encode_mp4(ep_frame_lists[0], fps, tmp_mp4, verbose=False)
-                compression_ratio = _get_file_size_in_mb(tmp_mp4) / ep_src_sizes_in_mb[0]
+                compression_ratio = (
+                    _get_file_size_in_mb(tmp_mp4) / ep_src_sizes_in_mb[0]
+                )
 
         # Pack episodes into file-XXX by estimated size. The ratio is refined from each packed file actually written.
         chunk_idx = 0
