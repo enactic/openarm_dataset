@@ -202,11 +202,11 @@ class Dataset:
             cutoff=cutoff or self._smoothing_cutoff,
         )
 
-    def load_cameras(self, episode_index: int) -> dict[str, Camera]:
+    def load_cameras(self, episode: dict) -> dict[str, Camera]:
         """Load all camera data.
 
         Args:
-            episode_index: Episode index to load.
+            episode: Episode to load.
 
         Returns:
             Dictionary mapping names to Camera.
@@ -220,16 +220,14 @@ class Dataset:
             }
 
         """
-        return {
-            name: self.load_camera(name, episode_index) for name in self.camera_names
-        }
+        return {name: self.load_camera(name, episode) for name in self.camera_names}
 
-    def load_camera(self, name: str, episode_index: int) -> Camera:
+    def load_camera(self, name: str, episode: dict) -> Camera:
         """Load camera data.
 
         Args:
             name: Camera name to load.
-            episode_index: Episode index to load.
+            episode: Episode to load.
 
         Returns:
             Camera.
@@ -237,8 +235,7 @@ class Dataset:
         """
         if name not in self.camera_names:
             raise KeyError(f"Camera {name} not found. Available: {self.camera_names}")
-        # TODO: make this method accept an `episode` instead of an `episode_index`.
-        base_path = self.episode_path(self.meta.episodes[episode_index])
+        base_path = self.episode_path(episode)
         # Unversioned dataset. This is for backward compatibility.
         if self.meta.version is None:
             path = base_path / f"{name}_image"
@@ -498,7 +495,9 @@ class Dataset:
 
     def _write_camera_data(self, output: os.PathLike, episode_index: int):
         base_path = output / "episodes" / self._episode_id(episode_index)
-        for name, camera in self.load_cameras(episode_index).items():
+        # TODO: make this method accept an `episode` instead of an `episode_index`.
+        episode = self.meta.episodes[episode_index]
+        for name, camera in self.load_cameras(episode).items():
             if self.meta.version is None:
                 if name == "left_wrist":
                     name = "wrist_left"
