@@ -70,7 +70,7 @@ def test_load_all_obs(dataset):
 
 
 def test_load_action(dataset):
-    action = dataset.load_action(0)
+    action = dataset.load_action(dataset.meta.episodes[0])
     assert set(action) == {
         "arms/left/qpos",
         "arms/right/qpos",
@@ -102,7 +102,7 @@ def test_load_action(dataset):
 
 
 def test_load_all_action(dataset):
-    action_list = [dataset.load_action(i) for i in range(dataset.num_episodes)]
+    action_list = [dataset.load_action(episode) for episode in dataset.meta.episodes]
     assert len(action_list) == dataset.num_episodes
     for action in action_list:
         assert not action["arms/left/qpos"].empty

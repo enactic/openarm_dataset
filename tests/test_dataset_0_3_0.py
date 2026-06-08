@@ -92,7 +92,7 @@ def test_load_all_obs(dataset):
 
 
 def test_load_action(dataset):
-    action = dataset.load_action(0)
+    action = dataset.load_action(dataset.meta.episodes[0])
     assert set(action) == ARM_ACTION_KEYS | {"lifter/elevation"}
     assert action["arms/left/qpos"].shape == (90, 8)
     assert action["arms/right/qpos"].shape == (90, 8)
@@ -103,8 +103,8 @@ def test_load_action(dataset):
 
 
 def test_load_all_action_have_lifter(dataset):
-    for i in range(dataset.num_episodes):
-        action = dataset.load_action(i)
+    for episode in dataset.meta.episodes:
+        action = dataset.load_action(episode)
         assert not action["lifter/elevation"].empty
 
 
