@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -42,6 +43,7 @@ class DummyCamera(Camera):
 
 class DummyDataset:
     def __init__(self):
+        self.meta = SimpleNamespace(episodes=[{"id": "0"}])
         self._obs = {
             "arms/right/qpos": self._generate_dummy_embodiment_data(2000),
             "arms/left/qpos": self._generate_dummy_embodiment_data(2000),

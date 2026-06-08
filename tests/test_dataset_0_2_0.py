@@ -119,7 +119,7 @@ def test_camera_names(dataset):
 
 
 def test_load_cameras(dataset):
-    cameras = dataset.load_cameras(0)
+    cameras = dataset.load_cameras(dataset.meta.episodes[0])
     assert set(cameras) == {
         "ceiling",
         "head",
@@ -130,7 +130,7 @@ def test_load_cameras(dataset):
 
 
 def test_load_camera(dataset):
-    camera_data = dataset.load_camera("ceiling", 0)
+    camera_data = dataset.load_camera("ceiling", dataset.meta.episodes[0])
     assert camera_data.num_frames == 3
 
 
@@ -148,7 +148,7 @@ def test_camera_filter(dataset):
         "wrist_left",
         "wrist_right",
     }
-    assert set(dataset.load_cameras(0)) == {
+    assert set(dataset.load_cameras(dataset.meta.episodes[0])) == {
         "head",
         "wrist_left",
         "wrist_right",
