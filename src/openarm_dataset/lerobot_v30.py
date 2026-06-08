@@ -57,12 +57,17 @@ def _update_chunk_file_indices(chunk_idx: int, file_idx: int) -> tuple[int, int]
     return chunk_idx, file_idx + 1
 
 
-def _get_parquet_size_in_mb(path: Path) -> float:
-    return path.stat().st_size / (1024**2)
-
-
 def _get_file_size_in_mb(path: Path) -> float:
     return path.stat().st_size / (1024**2)
+
+
+def _write_dfs_to_parquet(
+    dfs: list[pd.DataFrame], output_dir: Path, chunk_idx: int, file_idx: int
+):
+    packed = pd.concat(dfs, ignore_index=True)
+    out = output_dir / DATA_PATH.format(chunk_index=chunk_idx, file_index=file_idx)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    packed.to_parquet(out, index=False)
 
 
 def _write_packed_parquet(
@@ -107,20 +112,13 @@ def _write_packed_parquet(
         )
 
         # Estimate this episode's parquet size by writing to a temporary file
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
             tmp_path = Path(tmp.name)
-        df.to_parquet(tmp_path, index=False)
-        ep_size_in_mb = _get_parquet_size_in_mb(tmp_path)
-        tmp_path.unlink()
+            df.to_parquet(tmp_path, index=False)
+            ep_size_in_mb = _get_file_size_in_mb(tmp_path)
 
         if size_in_mb + ep_size_in_mb >= DATA_FILES_SIZE_IN_MB and pending_dfs:
-            packed = pd.concat(pending_dfs, ignore_index=True)
-            out = output_dir / DATA_PATH.format(
-                chunk_index=chunk_idx, file_index=file_idx
-            )
-            out.parent.mkdir(parents=True, exist_ok=True)
-            packed.to_parquet(out, index=False)
-
+            _write_dfs_to_parquet(pending_dfs, output_dir, chunk_idx, file_idx)
             chunk_idx, file_idx = _update_chunk_file_indices(chunk_idx, file_idx)
             size_in_mb = 0.0
             pending_dfs = []
@@ -138,10 +136,7 @@ def _write_packed_parquet(
         gidx += num_frames
 
     if pending_dfs:
-        packed = pd.concat(pending_dfs, ignore_index=True)
-        out = output_dir / DATA_PATH.format(chunk_index=chunk_idx, file_index=file_idx)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        packed.to_parquet(out, index=False)
+        _write_dfs_to_parquet(pending_dfs, output_dir, chunk_idx, file_idx)
 
     return episodes_data_meta, gidx
 
@@ -181,11 +176,10 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
         # into a temporary file, mirroring the parquet size estimation above.
         compression_ratio = 1.0
         if ep_src_sizes_in_mb and ep_src_sizes_in_mb[0] > 0:
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
                 tmp_mp4 = Path(tmp.name)
-            _encode_mp4(ep_frame_lists[0], fps, tmp_mp4, verbose=False)
-            compression_ratio = _get_file_size_in_mb(tmp_mp4) / ep_src_sizes_in_mb[0]
-            tmp_mp4.unlink()
+                _encode_mp4(ep_frame_lists[0], fps, tmp_mp4, verbose=False)
+                compression_ratio = _get_file_size_in_mb(tmp_mp4) / ep_src_sizes_in_mb[0]
 
         # Pack episodes into file-XXX by estimated size. The ratio is refined from each packed file actually written.
         chunk_idx = 0

@@ -72,7 +72,7 @@ def _numpy_image_stats(paths: list[Path]) -> dict:
         "max": pixels.max(axis=0) / 255.0,
         "mean": pixels.mean(axis=0) / 255.0,
         "std": pixels.std(axis=0, ddof=0) / 255.0,
-        "count": len(_sample_image_indices(len(paths))),
+        "count": len(paths),
     }
 
 
