@@ -34,9 +34,9 @@ from .lerobot_v21 import (
     _describe_images,
     _describe_scalar,
     _describe_vector,
-    _encode_mp4,
     _get_image_name_from_key,
 )
+from .ffmpeg import encode_mp4
 
 CODEBASE_VERSION = "v3.0"
 DATA_FILES_SIZE_IN_MB = 100
@@ -178,7 +178,7 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
         if ep_src_sizes_in_mb and ep_src_sizes_in_mb[0] > 0:
             with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
                 tmp_mp4 = Path(tmp.name)
-                _encode_mp4(ep_frame_lists[0], fps, tmp_mp4, verbose=False)
+                encode_mp4(ep_frame_lists[0], fps, tmp_mp4, verbose=False)
                 compression_ratio = _get_file_size_in_mb(tmp_mp4) / ep_src_sizes_in_mb[0]
 
         # Pack episodes into file-XXX by estimated size. The ratio is refined from each packed file actually written.
@@ -201,7 +201,7 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
                     file_index=file_idx,
                 )
                 out_path.parent.mkdir(parents=True, exist_ok=True)
-                _encode_mp4(pending_frames, fps, out_path, verbose=False)
+                encode_mp4(pending_frames, fps, out_path, verbose=False)
                 if src_in_mb > 0:
                     compression_ratio = _get_file_size_in_mb(out_path) / src_in_mb
 
@@ -224,7 +224,7 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
                 file_index=file_idx,
             )
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            _encode_mp4(pending_frames, fps, out_path, verbose=False)
+            encode_mp4(pending_frames, fps, out_path, verbose=False)
 
         for idx, (c, f, from_ts, to_ts) in enumerate(ep_assignments):
             episodes_video_meta[idx][f"videos/{image_name}/chunk_index"] = c
