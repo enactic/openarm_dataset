@@ -164,9 +164,10 @@ class Dataset:
             }
 
         """
+        # TODO: make this method accept an `episode` instead of an `episode_index`.
         return self._load_embodiment_values(
             "obs",
-            episode_index,
+            self.meta.episodes[episode_index],
             use_unixtime,
             cutoff=cutoff or self._smoothing_cutoff,
         )
@@ -195,9 +196,10 @@ class Dataset:
             }
 
         """
+        # TODO: make this method accept an `episode` instead of an `episode_index`.
         return self._load_embodiment_values(
             "action",
-            episode_index,
+            self.meta.episodes[episode_index],
             use_unixtime=use_unixtime,
             cutoff=cutoff or self._smoothing_cutoff,
         )
@@ -349,13 +351,11 @@ class Dataset:
     def _load_embodiment_values(
         self,
         type_: str,
-        episode_index: int,
+        episode: dict,
         use_unixtime: bool = False,
         cutoff: float = None,
     ) -> dict[str, pd.DataFrame]:
         values = {}
-        # TODO: make this method accept an `episode` instead of an `episode_index`.
-        episode = self.meta.episodes[episode_index]
         for attribute in self.get_embodiment_attributes(type_, episode):
             values[attribute["key"]] = self._load_embodiment_value(
                 attribute,
