@@ -431,6 +431,17 @@ class Dataset:
             from .lerobot_v21 import to_gr00t
 
             return to_gr00t(self, output, **options)
+        elif format == "rrd":
+            try:
+                from .rrd import to_rrd
+            except ModuleNotFoundError as err:
+                if err.name == "rerun":
+                    raise ModuleNotFoundError(
+                        "RRD export requires the optional dependency 'rerun-sdk'. Install with `pip install openarm_dataset[rerun]`."
+                    ) from err
+                raise
+
+            return to_rrd(self, output, **options)
         else:
             raise ValueError(f"Unsupported format: {format}")
 
