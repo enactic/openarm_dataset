@@ -103,7 +103,7 @@ class Sampler:
         hz: float,
     ) -> Iterator[Sample]:
         """Sample the all modalities data to the specified hz."""
-        obs = dataset.load_obs(episode_index, use_unixtime=True)
+        obs = dataset.load_obs(dataset.meta.episodes[episode_index], use_unixtime=True)
         action = dataset.load_action(
             dataset.meta.episodes[episode_index], use_unixtime=True
         )

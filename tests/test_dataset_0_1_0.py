@@ -30,7 +30,7 @@ def test_num_episodes(dataset):
 
 
 def test_load_obs(dataset):
-    obs = dataset.load_obs(0)
+    obs = dataset.load_obs(dataset.meta.episodes[0])
     assert set(obs) == {
         "arms/left/qpos",
         "arms/right/qpos",
@@ -62,7 +62,7 @@ def test_load_obs(dataset):
 
 
 def test_load_all_obs(dataset):
-    obs_list = [dataset.load_obs(i) for i in range(dataset.num_episodes)]
+    obs_list = [dataset.load_obs(episode) for episode in dataset.meta.episodes]
     assert len(obs_list) == dataset.num_episodes
     for obs in obs_list:
         assert not obs["arms/left/qpos"].empty

@@ -142,14 +142,14 @@ class Dataset:
 
     def load_obs(
         self,
-        episode_index: int,
+        episode: dict,
         use_unixtime: bool = False,
         cutoff: float = None,
     ) -> dict[str, pd.DataFrame]:
         """Load obs data.
 
         Args:
-            episode_index: Episode index to load.
+            episode: Episode to load.
             use_unixtime: If True, the DataFrame index is returned as Unix time
                 (float64) instead of datetime64[ns].
             cutoff: If not None, smoothing is applied using this value.
@@ -164,10 +164,9 @@ class Dataset:
             }
 
         """
-        # TODO: make this method accept an `episode` instead of an `episode_index`.
         return self._load_embodiment_values(
             "obs",
-            self.meta.episodes[episode_index],
+            episode,
             use_unixtime,
             cutoff=cutoff or self._smoothing_cutoff,
         )

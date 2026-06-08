@@ -57,7 +57,7 @@ def test_num_episodes(dataset):
 
 
 def test_load_obs(dataset):
-    obs = dataset.load_obs(0)
+    obs = dataset.load_obs(dataset.meta.episodes[0])
     assert set(obs) == ARM_OBS_KEYS | {"lifter/elevation"}
     for key in ARM_OBS_KEYS:
         assert obs[key].index.name == "timestamp"
@@ -74,7 +74,7 @@ def test_load_obs(dataset):
 
 
 def test_obs_columns_are_independent(dataset):
-    obs = dataset.load_obs(0)
+    obs = dataset.load_obs(dataset.meta.episodes[0])
     qpos = obs["arms/right/qpos"].iloc[0].to_numpy()
     qvel = obs["arms/right/qvel"].iloc[0].to_numpy()
     qtorque = obs["arms/right/qtorque"].iloc[0].to_numpy()
@@ -84,7 +84,7 @@ def test_obs_columns_are_independent(dataset):
 
 
 def test_load_all_obs(dataset):
-    obs_list = [dataset.load_obs(i) for i in range(dataset.num_episodes)]
+    obs_list = [dataset.load_obs(episode) for episode in dataset.meta.episodes]
     assert len(obs_list) == dataset.num_episodes
     for obs in obs_list:
         for key in ARM_OBS_KEYS | {"lifter/elevation"}:
@@ -159,6 +159,6 @@ def test_write_preserves_state_parquet(dataset, tmp_path):
             output / "episodes" / episode_id / "action" / "lifter" / "elevation.parquet"
         ).exists()
     rewritten = Dataset(output)
-    obs = rewritten.load_obs(0)
+    obs = rewritten.load_obs(rewritten.meta.episodes[0])
     assert set(obs) == ARM_OBS_KEYS | {"lifter/elevation"}
     assert list(obs["lifter/elevation"].columns) == LIFTER_JOINT_COLUMNS

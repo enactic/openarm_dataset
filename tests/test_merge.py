@@ -221,5 +221,5 @@ def test_merged_dataset_is_loadable(dataset_a, dataset_b, tmp_path):
     ds = Dataset(output)
     assert ds.num_episodes == 4
     assert ds.meta.version == "0.3.0"
-    obs = ds.load_obs(0)
+    obs = ds.load_obs(ds.meta.episodes[0])
     assert len(obs) > 0
