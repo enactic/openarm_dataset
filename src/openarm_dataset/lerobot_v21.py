@@ -17,12 +17,10 @@
 from pathlib import Path
 import pandas as pd
 import numpy as np
-import subprocess
-import tempfile
 import json
-import shutil
 
 from .dataset import Dataset
+from .ffmpeg import VIDEO_PIX_FMT, encode_mp4
 from PIL import Image
 
 ROBOT_TYPE = "openarm_bimanual"
@@ -30,8 +28,6 @@ CHUNK_SIZE = 1000
 METADATA_DIR = "meta"
 
 # config for video encoding
-FFMPEG_CODEC = "libx264"
-VIDEO_PIX_FMT = "yuv420p"
 VIDEO_CODEC = "h264"
 
 # config for image stats estimation
@@ -142,83 +138,6 @@ def _get_chunk_name(episode_id: int):
 
 def _get_image_name_from_key(key: str):
     return f"observation.images.{key}"
-
-
-def _get_ffmpeg_exe() -> str | None:
-    """Get the path to a valid ffmpeg executable."""
-    # check if ffmpeg is available in the current environment
-    exe = shutil.which("ffmpeg")
-    if exe and _is_valid_exe(exe):
-        return exe
-    return None
-
-
-def _is_valid_exe(exe: str) -> bool:
-    """Check if the given executable is a valid ffmpeg."""
-    startupinfo = None
-
-    # On Windows, hide the console window when running ffmpeg
-    if hasattr(subprocess, "STARTUPINFO"):
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-    try:
-        subprocess.check_call(
-            [exe, "-version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-            startupinfo=startupinfo,
-        )
-        return True
-    except (OSError, ValueError, subprocess.CalledProcessError):
-        return False
-
-
-def _escape_concat_path(path: Path) -> str:
-    return str(path.resolve()).replace("'", "'\\''")
-
-
-def _encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
-    if not frames:
-        return
-    try:
-        ffmpeg_exe = _get_ffmpeg_exe()
-        if ffmpeg_exe is None:
-            raise RuntimeError("FFmpeg executable not found.")
-    except RuntimeError as e:
-        raise RuntimeError(
-            "FFmpeg is required for video encoding but was not found. Please install FFmpeg in your conda environment or ensure it is available in your system PATH."
-        ) from e
-    with tempfile.TemporaryDirectory() as temp_dir:
-        list_path = Path(temp_dir) / "ffmpeg_concat.txt"
-        with list_path.open("w") as f_list:
-            for f_path in frames:
-                f_list.write(f"file '{_escape_concat_path(f_path)}'\n")
-
-        cmd = [
-            ffmpeg_exe,  # use the detected ffmpeg executable path
-            "-y",
-            "-nostdin",
-            "-loglevel",
-            "warning",
-            "-stats",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-r",
-            str(fps),
-            "-i",
-            str(list_path),
-            "-c:v",
-            FFMPEG_CODEC,
-            "-preset",
-            "veryfast",
-            "-pix_fmt",
-            VIDEO_PIX_FMT,
-            str(out_mp4),
-        ]
-        subprocess.run(cmd, check=True, capture_output=not verbose)
 
 
 def _describe_vector(X):
@@ -417,7 +336,7 @@ def _write_videos(dataset, records, output_dir, fps, remap_episode_index):
                 / f"episode_{lerobot_episode_index:06d}.mp4"
             )
             video_path.parent.mkdir(parents=True, exist_ok=True)
-            _encode_mp4(sampled_cameras[camera_key], fps, video_path)
+            encode_mp4(sampled_cameras[camera_key], fps, video_path)
 
 
 def _write_metadata(
