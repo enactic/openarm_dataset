@@ -178,8 +178,7 @@ def test_packed_data(lerobot_v30_setup):
 
     episode_indices = df["episode_index"].unique()
     assert len(episode_indices) == dataset.meta.num_episodes
-
-    sample_episode = dataset.sample(FPS, episode_index=0)
+    sample_episode = dataset.sample(FPS, episode=dataset.meta.episodes[0])
     sample_0_action = np.concatenate(
         [
             sample_episode[0].action["arms/right/qpos"],
@@ -355,7 +354,7 @@ def test_success_only(tmp_path):
     df_data = pd.read_parquet(data_path)
     assert df_data["episode_index"].nunique() == 1
 
-    sample_episode = dataset.sample(FPS, episode_index=1)
+    sample_episode = dataset.sample(FPS, episode=dataset.meta.episodes[1])
     sample_0_action = np.concatenate(
         [
             sample_episode[0].action["arms/right/qpos"],
@@ -383,7 +382,7 @@ def test_episode_image_stats(lerobot_v30_setup):
 
     for row_idx in range(len(df)):
         ep_index = int(df.iloc[row_idx]["episode_index"])
-        samples = dataset.sample(hz=FPS, episode_index=ep_index)
+        samples = dataset.sample(hz=FPS, episode=dataset.meta.episodes[ep_index])
 
         for cam in dataset.camera_names:
             image_name = f"observation.images.{cam}"
