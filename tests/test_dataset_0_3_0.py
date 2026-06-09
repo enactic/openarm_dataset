@@ -109,7 +109,7 @@ def test_load_all_action_have_lifter(dataset):
 
 
 def test_sample(dataset):
-    samples = dataset.sample(hz=30, episode_index=0)
+    samples = dataset.sample(hz=30, episode=dataset.meta.episodes[0])
     assert len(samples) > 1
     assert set(samples[0].obs) == ARM_OBS_KEYS | {"lifter/elevation"}
     assert samples[0].obs["arms/left/qpos"].shape == (8,)

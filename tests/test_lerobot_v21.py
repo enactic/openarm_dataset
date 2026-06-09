@@ -112,7 +112,7 @@ def test_metadata(lerobot_v21_setup):
 
     for ep in episodes_stats:
         episode_index = ep["episode_index"]
-        samples = dataset.sample(hz=FPS, episode_index=episode_index)
+        samples = dataset.sample(hz=FPS, episode=dataset.meta.episodes[episode_index])
 
         for cam in dataset.camera_names:
             key = f"observation.images.{cam}"
@@ -169,7 +169,7 @@ def test_data(lerobot_v21_setup):
 
     df = pd.read_parquet(data_path)
 
-    sample_episode = dataset.sample(30, episode_index=0)
+    sample_episode = dataset.sample(30, episode=dataset.meta.episodes[0])
     sample_episode_0_action = sample_episode[0].action
     sample_0_action = np.concatenate(
         [
@@ -267,7 +267,7 @@ def test_success_only(tmp_path):
     df = pd.read_parquet(data_path)
 
     sample_episode = dataset.sample(
-        30, episode_index=1
+        30, episode=dataset.meta.episodes[1]
     )  # episode_index 1 (id:3) is the only success episode
     sample_episode_0_action = sample_episode[0].action
     sample_0_action = np.concatenate(

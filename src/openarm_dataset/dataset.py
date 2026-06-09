@@ -248,12 +248,12 @@ class Dataset:
     def sample(
         self,
         hz: float,
-        episode_index: int,
+        episode: dict,
     ) -> list[Sample]:
         """Sample the all modalities data to the specified hz.
 
         Args:
-            episode_index: Episode index to sample.
+            episode: Episode to sample.
             hz: Sampling hz.
 
         Returns:
@@ -283,7 +283,7 @@ class Dataset:
 
         """
         sampler = Sampler()
-        return list(sampler.sample(self, episode_index, hz))
+        return list(sampler.sample(self, episode, hz))
 
     def get_embodiment_attributes(self, type_: str, episode: dict):
         """Return the list of embodiment attributes for the given type and episode."""

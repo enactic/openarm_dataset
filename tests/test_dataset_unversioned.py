@@ -156,7 +156,7 @@ def test_camera_filter(dataset):
 
 
 def test_sample(dataset):
-    samples = dataset.sample(hz=30, episode_index=0)
+    samples = dataset.sample(hz=30, episode=dataset.meta.episodes[0])
     assert len(samples) > 1
     interval = samples[1].timestamp - samples[0].timestamp
     assert interval == pytest.approx(1 / 30, rel=0.1)

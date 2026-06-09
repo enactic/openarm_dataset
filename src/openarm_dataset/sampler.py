@@ -99,15 +99,13 @@ class Sampler:
     def sample(
         self,
         dataset: Dataset,
-        episode_index: int,
+        episode: dict,
         hz: float,
     ) -> Iterator[Sample]:
         """Sample the all modalities data to the specified hz."""
-        obs = dataset.load_obs(dataset.meta.episodes[episode_index], use_unixtime=True)
-        action = dataset.load_action(
-            dataset.meta.episodes[episode_index], use_unixtime=True
-        )
-        cameras = dataset.load_cameras(dataset.meta.episodes[episode_index])
+        obs = dataset.load_obs(episode, use_unixtime=True)
+        action = dataset.load_action(episode, use_unixtime=True)
+        cameras = dataset.load_cameras(episode)
 
         sampled_times = self._sample_timestamps(hz, obs, action, cameras)
 

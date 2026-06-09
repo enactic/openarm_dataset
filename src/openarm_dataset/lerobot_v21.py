@@ -81,11 +81,10 @@ def _collect_downsampled_data(
     dataset: Dataset, fps: int, joint_keys, success_only=False
 ):
     records = []
-    for episode_index in range(dataset.meta.num_episodes):
-        success = dataset.meta.episodes[episode_index]["success"]
-        if not success and success_only:
+    for episode_index, episode in enumerate(dataset.meta.episodes):
+        if not episode["success"] and success_only:
             continue
-        samples = dataset.sample(hz=fps, episode_index=episode_index)
+        samples = dataset.sample(hz=fps, episode=episode)
         num_frames = len(samples)
         sampled_obs = [
             np.concatenate([s.obs[k] for k in joint_keys], axis=0).astype(np.float32)
@@ -521,7 +520,7 @@ def _write_metadata(
         "success": {"dtype": "int64", "shape": [1], "names": None},
         "last_frame_index": {"dtype": "int64", "shape": [1], "names": None},
     }
-    sample_record = dataset.sample(hz=fps, episode_index=0)[0]
+    sample_record = dataset.sample(hz=fps, episode=dataset.meta.episodes[0])[0]
     for cam in dataset.camera_names:
         sample_image = sample_record.cameras[cam].load()
         h, w = sample_image.shape[:2]

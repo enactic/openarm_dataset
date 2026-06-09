@@ -107,7 +107,7 @@ def test_sample():
     samples = list(
         sampler.sample(
             dataset,
-            episode_index=0,
+            episode=dataset.meta.episodes[0],
             hz=10,
         )
     )
