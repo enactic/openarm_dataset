@@ -445,28 +445,22 @@ class Dataset:
             raise ValueError(f"Unsupported format: {format}")
 
     def _write_data(self, output: Path):
-        for i, episode in enumerate(self.meta.episodes):
-            self._write_episode(output, i)
+        for episode in self.meta.episodes:
+            self._write_episode(output, episode)
 
-    def _write_episode(self, output: Path, episode_index: int):
-        self._write_embodiment_data(output, episode_index)
-        self._write_camera_data(output, episode_index)
+    def _write_episode(self, output: Path, episode: dict):
+        self._write_embodiment_data(output, episode)
+        self._write_camera_data(output, episode)
 
-    def _write_embodiment_data(self, output: Path, episode_index: int):
+    def _write_embodiment_data(self, output: Path, episode: dict):
         written_state_paths = set()
-        # TODO: make this method accept an `episode` instead of an `episode_index`.
-        episode = self.meta.episodes[episode_index]
         for type_ in ["action", "obs"]:
             for attribute in self.get_embodiment_attributes(type_, episode):
                 embodiment = attribute["embodiment"]
                 component = attribute["component"]
                 name = attribute["name"]
                 base_path = (
-                    output
-                    / "episodes"
-                    / self._episode_id(episode_index)
-                    / type_
-                    / embodiment.name
+                    output / "episodes" / episode["id"] / type_ / embodiment.name
                 )
                 # 0.3.0 state.parquet (qpos/qvel/qtorque) is shared across
                 # attributes for the same component; copy it once.
@@ -495,10 +489,8 @@ class Dataset:
                 else:
                     shutil.copy2(attribute["path"], new_path)
 
-    def _write_camera_data(self, output: os.PathLike, episode_index: int):
-        base_path = output / "episodes" / self._episode_id(episode_index)
-        # TODO: make this method accept an `episode` instead of an `episode_index`.
-        episode = self.meta.episodes[episode_index]
+    def _write_camera_data(self, output: os.PathLike, episode: dict):
+        base_path = output / "episodes" / episode["id"]
         for name, camera in self.load_cameras(episode).items():
             if self.meta.version is None:
                 if name == "left_wrist":
