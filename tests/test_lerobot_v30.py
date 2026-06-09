@@ -419,4 +419,4 @@ def test_episode_image_stats(lerobot_v30_setup):
             assert (saved_max >= expected["max"] - EXTREMA_SLACK).all()
 
             saved_count = df.iloc[row_idx][count_col]
-            assert saved_count[0] == len(_sample_image_indices(len(paths)))
+            assert saved_count[0] == len(paths)
