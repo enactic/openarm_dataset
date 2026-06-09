@@ -25,7 +25,6 @@ import packaging.version
 import pandas as pd
 from PIL import Image
 from openarm_dataset import Dataset
-from openarm_dataset.lerobot_v21 import _sample_image_indices
 import lerobot
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
