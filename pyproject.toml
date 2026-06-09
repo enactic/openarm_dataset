@@ -45,8 +45,8 @@ dependencies = [
     "lerobot >= 0.5.0; python_version >= '3.12'",
 ]
 rerun = [
-    # The API differs by version; the latest API requires 0.23+.
-    "rerun-sdk >= 0.23",
+    # The API differs by version; the latest API requires 0.33+.
+    "rerun-sdk >= 0.33",
 ]
 
 [project.urls]
@@ -87,6 +87,10 @@ conflicts = [
     ],
     [
         { extra = "lerobot-dataset-v2.1" },
+        { extra = "rerun" },
+    ],
+    [
+        { extra = "lerobot-dataset-v3.0" },
         { extra = "rerun" },
     ],
 ]
