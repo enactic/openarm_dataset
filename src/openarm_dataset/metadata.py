@@ -222,21 +222,39 @@ class Embodiment:
 class OpenArm(Embodiment):
     """Metadata for OpenArm as embodiment."""
 
+    _default_components = ("right", "left")
+    _default_attributes = ("qpos",)
+    _default_joints = (
+        "joint1",
+        "joint2",
+        "joint3",
+        "joint4",
+        "joint5",
+        "joint6",
+        "joint7",
+        "gripper",
+    )
+
     def __init__(self, name: str, data: dict):
         """Initialize OpenArm."""
         super().__init__(name, data)
-        self.components = ("right", "left")
-        self.attributes = ("qpos",)
-        self.joints = (
-            "joint1",
-            "joint2",
-            "joint3",
-            "joint4",
-            "joint5",
-            "joint6",
-            "joint7",
-            "gripper",
-        )
+        self.components = tuple(data.get("components", self._default_components))
+        attributes_data = data.get("attributes")
+        if attributes_data is None:
+            self.attributes = self._default_attributes
+            self._columns_map: dict[str, tuple] = {}
+        else:
+            self.attributes = tuple(attributes_data.keys())
+            self._columns_map = {
+                attr: tuple(cfg["columns"])
+                for attr, cfg in attributes_data.items()
+                if cfg and "columns" in cfg
+            }
+        self.joints = self._default_joints
+
+    def get_joints(self, attribute: str) -> tuple:
+        """Return column names for the given attribute."""
+        return self._columns_map.get(attribute, self._default_joints)
 
 
 class OpenArmCellLifter(Embodiment):

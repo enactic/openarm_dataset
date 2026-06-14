@@ -377,7 +377,13 @@ class Dataset:
         else:
             column_name = "value"
             drop_columns = ["value"]
-        df[list(attribute["embodiment"].joints)] = pd.DataFrame(
+        embodiment = attribute["embodiment"]
+        joints = (
+            embodiment.get_joints(attribute["name"])
+            if hasattr(embodiment, "get_joints")
+            else embodiment.joints
+        )
+        df[list(joints)] = pd.DataFrame(
             df[column_name].tolist(),
             index=df.index,
         )
