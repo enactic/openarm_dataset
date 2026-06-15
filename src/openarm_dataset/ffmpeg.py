@@ -58,8 +58,13 @@ def _escape_concat_path(path: Path) -> str:
     return str(path.resolve()).replace("'", "'\\''")
 
 
-def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
-    """Encode the given image frames into an MP4 file using FFmpeg."""
+def encode_mp4(frames, fps: int, out_mp4: Path, verbose=True):
+    """Encode the given image frames into an MP4 file using FFmpeg.
+
+    ``frames`` is a list of :class:`~openarm_dataset.camera.Frame` objects.
+    Directory-backed frames are read in place; tar-backed frames are extracted
+    into a temporary directory for the duration of the encode.
+    """
     if not frames:
         return
     try:
@@ -73,7 +78,8 @@ def encode_mp4(frames: list[Path], fps: int, out_mp4: Path, verbose=True):
     with tempfile.TemporaryDirectory() as temp_dir:
         list_path = Path(temp_dir) / "ffmpeg_concat.txt"
         with list_path.open("w") as f_list:
-            for f_path in frames:
+            for i, frame in enumerate(frames):
+                f_path = frame.materialize(temp_dir, index=i)
                 f_list.write(f"file '{_escape_concat_path(f_path)}'\n")
 
         cmd = [

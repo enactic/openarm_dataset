@@ -62,6 +62,14 @@ def main():
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--camera-format",
+        help="How to store camera frames when the output format is openarm: "
+        "'dir' (one JPEG file per frame, default) or 'tar' (one .tar archive "
+        "per camera, recommended for Hugging Face Hub file-count limits)",
+        default="dir",
+        choices=["dir", "tar"],
+    )
 
     args = parser.parse_args()
     write_kwargs = {"format": args.format}
@@ -70,6 +78,8 @@ def main():
         write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
         write_kwargs["train_split"] = args.train_split
         write_kwargs["success_only"] = args.success_only
+    else:
+        write_kwargs["camera_format"] = args.camera_format
 
     old_dataset = openarm_dataset.Dataset(args.input)
     old_dataset.write(args.output, **write_kwargs)

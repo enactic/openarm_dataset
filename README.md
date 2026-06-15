@@ -66,6 +66,16 @@ PosixPath('.../head/1772010251618790832.jpeg')
 ...     pass  # iterate over Frame objects
 ```
 
+A camera's frames may be stored either as individual timestamped JPEG files in a
+directory (`episodes/0/cameras/head/<timestamp>.jpeg`) or packed into a single
+uncompressed tar archive (`episodes/0/cameras/head.tar`). Packing keeps the file
+count low enough for [Hugging Face Hub's storage
+recommendations](https://huggingface.co/docs/hub/storage-limits#recommendations).
+Both layouts expose the same API shown above. For tar-backed cameras, `frame.path`
+is a synthetic `.../head.tar/<timestamp>.jpeg` path that locates the image inside
+the archive — it is not a real file, so use `frame.load()` or `frame.read_bytes()`
+to access the image data.
+
 Sampling:
 
 ```python
@@ -125,6 +135,8 @@ Convert a dataset:
 ```bash
 openarm-dataset-convert <input> <output> \
     [--format {openarm,lerobot_v2.1,gr00t}] \
+    [--camera-format {dir,tar}] # default dir (openarm only); tar packs each \
+                                # camera into one .tar archive \
     [--fps INT]                # default 30 (lerobot/gr00t only) \
     [--smoothing-cutoff FLOAT] # default 1.0 (lerobot/gr00t only) \
     [--train-split FLOAT]      # default 0.8 (lerobot/gr00t only) \

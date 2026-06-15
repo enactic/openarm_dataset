@@ -408,16 +408,16 @@ class Dataset:
         filtered_values = signal.filtfilt(b, a, df.values, axis=0)
         return pd.DataFrame(filtered_values, index=df.index, columns=df.columns)
 
-    def _write(self, output: str | os.PathLike):
+    def _write(self, output: str | os.PathLike, camera_format: str = "dir"):
         """Write this dataset as the latest OpenArm dataset format."""
         output = Path(output)
         self.meta.write(output)
-        self._write_data(output)
+        self._write_data(output, camera_format=camera_format)
 
     def write(self, output: str | os.PathLike, format: str | None = None, **options):
         """Write this dataset in the specified format."""
         if format is None or format == "openarm":
-            return self._write(output)
+            return self._write(output, **options)
         elif format == "lerobot_v2.1":
             from .lerobot_v21 import to_lerobotv21
 
@@ -444,13 +444,13 @@ class Dataset:
         else:
             raise ValueError(f"Unsupported format: {format}")
 
-    def _write_data(self, output: Path):
+    def _write_data(self, output: Path, camera_format: str = "dir"):
         for episode in self.meta.episodes:
-            self._write_episode(output, episode)
+            self._write_episode(output, episode, camera_format=camera_format)
 
-    def _write_episode(self, output: Path, episode: dict):
+    def _write_episode(self, output: Path, episode: dict, camera_format: str = "dir"):
         self._write_embodiment_data(output, episode)
-        self._write_camera_data(output, episode)
+        self._write_camera_data(output, episode, camera_format=camera_format)
 
     def _write_embodiment_data(self, output: Path, episode: dict):
         written_state_paths = set()
@@ -489,7 +489,9 @@ class Dataset:
                 else:
                     shutil.copy2(attribute["path"], new_path)
 
-    def _write_camera_data(self, output: os.PathLike, episode: dict):
+    def _write_camera_data(
+        self, output: os.PathLike, episode: dict, camera_format: str = "dir"
+    ):
         base_path = output / "episodes" / episode["id"]
         for name, camera in self.load_cameras(episode).items():
             if self.meta.version is None:
@@ -497,6 +499,9 @@ class Dataset:
                     name = "wrist_left"
                 elif name == "right_wrist":
                     name = "wrist_right"
-            new_path = base_path / "cameras" / name
-            new_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(camera.base_path, new_path)
+            cameras_dir = base_path / "cameras"
+            cameras_dir.mkdir(parents=True, exist_ok=True)
+            if camera_format == "tar":
+                camera.write_tar(cameras_dir / f"{name}.tar")
+            else:
+                camera.extract_to(cameras_dir / name)

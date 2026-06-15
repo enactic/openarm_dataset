@@ -159,7 +159,7 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
         image_name = _get_image_name_from_key(camera_key)
 
         # Collect frame lists and their source sizes (no encoding here).
-        ep_frame_lists: list[list[Path]] = []
+        ep_frame_lists: list[list] = []
         ep_src_sizes_in_mb: list[float] = []
         for episode_index, num_frames, _, _, sampled_cameras in records:
             frames = sampled_cameras[camera_key]
@@ -170,7 +170,7 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
                     f"{num_frames} frames; video/data are out of sync."
                 )
             ep_frame_lists.append(frames)
-            ep_src_sizes_in_mb.append(sum(f.stat().st_size for f in frames) / (1024**2))
+            ep_src_sizes_in_mb.append(sum(f.size for f in frames) / (1024**2))
 
         # Calibrate the compression ratio by encoding the first episode once
         # into a temporary file, mirroring the parquet size estimation above.
@@ -188,7 +188,7 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
         file_idx = 0
         src_in_mb = 0.0
         frames_in_file = 0
-        pending_frames: list[Path] = []
+        pending_frames: list = []
         ep_assignments: list[tuple[int, int, float, float]] = []
 
         for idx, frames in enumerate(

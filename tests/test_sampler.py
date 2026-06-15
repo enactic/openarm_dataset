@@ -35,6 +35,7 @@ class DummyCamera(Camera):
         n = 240
         period_ns = 33_000_000  # 30Hz
         start = pd.Timestamp("2026-03-14 00:00:00").value
+        self.tar_path = None
         self.all_files = [Path(f"{start + i * period_ns}.jpeg") for i in range(n)]
 
     def get_frame(self, index: int):
