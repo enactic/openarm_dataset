@@ -116,7 +116,7 @@ def _log_cameras(
             # This keeps the RRD file small.
             video_path = Path(temp_dir) / f"{name}.mp4"
             encode_mp4(
-                [sample.cameras[name].path for sample in samples],
+                [sample.cameras[name] for sample in samples],
                 fps,
                 video_path,
             )
