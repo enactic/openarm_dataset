@@ -55,9 +55,7 @@ def camera(request, tmp_path):
 
 # Run every read-API assertion against both the directory and the tar backend so
 # they are verified to behave identically.
-parametrize_backends = pytest.mark.parametrize(
-    "camera", ["dir", "tar"], indirect=True
-)
+parametrize_backends = pytest.mark.parametrize("camera", ["dir", "tar"], indirect=True)
 
 
 @parametrize_backends
