@@ -107,25 +107,22 @@ class Frame:
         with self.open_image() as image:
             return image.show()
 
-    def materialize(self, temp_dir: os.PathLike, index: int | None = None) -> Path:
+    def materialize(self, temp_dir: os.PathLike) -> Path:
         """Return a real on-disk path to this frame's JPEG.
 
         Directory-backed frames return their existing path without copying.
-        Tar-backed frames are extracted into ``temp_dir`` and that path returned.
+        Tar-backed frames are extracted into ``temp_dir`` under their original
+        ``<timestamp>.jpeg`` name and that path returned.
 
         Args:
             temp_dir: Directory to extract tar-backed frames into.
-            index: Optional sequence number used to build a collision-free file
-                name when extracting (e.g. when frames from several archives are
-                materialized into the same directory).
 
         Returns:
             Path to a real JPEG file on disk.
 
         """
         if self._tar_path is not None:
-            name = f"{index:08d}.jpg" if index is not None else self.path.name
-            out_path = Path(temp_dir) / name
+            out_path = Path(temp_dir) / self.path.name
             out_path.write_bytes(self._read_bytes())
             return out_path
         else:

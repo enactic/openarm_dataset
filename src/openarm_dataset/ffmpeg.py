@@ -78,8 +78,8 @@ def encode_mp4(frames, fps: int, out_mp4: Path, verbose=True):
     with tempfile.TemporaryDirectory() as temp_dir:
         list_path = Path(temp_dir) / "ffmpeg_concat.txt"
         with list_path.open("w") as f_list:
-            for i, frame in enumerate(frames):
-                f_path = frame.materialize(temp_dir, index=i)
+            for frame in frames:
+                f_path = frame.materialize(temp_dir)
                 f_list.write(f"file '{_escape_concat_path(f_path)}'\n")
 
         cmd = [

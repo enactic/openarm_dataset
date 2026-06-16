@@ -95,7 +95,7 @@ def test_materialize_extracts_tar_frame(tmp_path):
     frame = tar_camera.get_frame(0)
     out_dir = tmp_path / "materialized"
     out_dir.mkdir()
-    real_path = frame.materialize(out_dir, index=0)
+    real_path = frame.materialize(out_dir)
     assert real_path.exists()
 
 
@@ -103,7 +103,7 @@ def test_materialize_dir_frame_is_zero_copy(tmp_path):
     frame = Camera("ceiling", DIR_CAMERA).get_frame(0)
     out_dir = tmp_path / "materialized"
     out_dir.mkdir()
-    real_path = frame.materialize(out_dir, index=0)
+    real_path = frame.materialize(out_dir)
     # Directory-backed frames return their own path without copying.
     assert real_path == frame.path
     assert list(out_dir.iterdir()) == []
