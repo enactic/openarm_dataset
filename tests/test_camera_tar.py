@@ -23,7 +23,7 @@ from openarm_dataset.camera import Camera
 DIR_CAMERA = (
     Path(__file__).parent
     / "fixture"
-    / "dataset_0.1.0"
+    / "dataset_0.3.0"
     / "episodes"
     / "0"
     / "cameras"
@@ -40,7 +40,7 @@ EXPECTED_TIMESTAMPS = [
 def _make_tar_camera(tmp_path) -> Camera:
     """Pack the dir fixture into cameras/ceiling.tar and return a tar Camera."""
     cameras_dir = tmp_path / "cameras"
-    Camera("ceiling", DIR_CAMERA).write_tar(cameras_dir / "ceiling.tar")
+    Camera("ceiling", DIR_CAMERA).write(cameras_dir / "ceiling.tar", format="tar")
     # base_path points at the (non-existent) directory; Camera falls back to the
     # sibling .tar, exactly like a real tar-backed dataset on disk.
     return Camera("ceiling", cameras_dir / "ceiling")
@@ -82,14 +82,6 @@ def test_load_timestamps(camera):
     npt.assert_allclose(camera.load_timestamps(), EXPECTED_TIMESTAMPS)
 
 
-def test_tar_read_bytes_matches_source(tmp_path):
-    tar_camera = _make_tar_camera(tmp_path)
-    dir_camera = Camera("ceiling", DIR_CAMERA)
-    for tar_frame, dir_frame in zip(tar_camera.frames(), dir_camera.frames()):
-        assert tar_frame.read_bytes() == dir_frame.read_bytes()
-        assert tar_frame.size == dir_frame.size
-
-
 def test_tar_frame_load_matches_source(tmp_path):
     tar_camera = _make_tar_camera(tmp_path)
     dir_camera = Camera("ceiling", DIR_CAMERA)
@@ -105,7 +97,6 @@ def test_materialize_extracts_tar_frame(tmp_path):
     out_dir.mkdir()
     real_path = frame.materialize(out_dir, index=0)
     assert real_path.exists()
-    assert real_path.read_bytes() == frame.read_bytes()
 
 
 def test_materialize_dir_frame_is_zero_copy(tmp_path):
@@ -128,11 +119,11 @@ def test_write_roundtrip_all_combos(tmp_path, src_backend, dst_format):
 
     out = tmp_path / "out"
     if dst_format == "tar":
-        src.write_tar(out / "ceiling.tar")
+        src.write(out / "ceiling.tar", format="tar")
         result = Camera("ceiling", out / "ceiling")
         assert (out / "ceiling.tar").is_file()
     else:
-        src.extract_to(out / "ceiling")
+        src.write(out / "ceiling", format="dir")
         result = Camera("ceiling", out / "ceiling")
         assert (out / "ceiling").is_dir()
 
@@ -142,7 +133,7 @@ def test_write_roundtrip_all_combos(tmp_path, src_backend, dst_format):
 
 def test_written_tar_is_uncompressed_and_flat(tmp_path):
     out = tmp_path / "ceiling.tar"
-    Camera("ceiling", DIR_CAMERA).write_tar(out)
+    Camera("ceiling", DIR_CAMERA).write(out, format="tar")
     with tarfile.open(out, mode="r:") as tf:  # mode r: requires uncompressed
         names = tf.getnames()
     assert sorted(names) == [

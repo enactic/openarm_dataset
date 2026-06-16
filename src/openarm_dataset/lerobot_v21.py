@@ -14,7 +14,6 @@
 
 """Conversion script for OpenArm Dataset to LeRobot v2.1 and GR00T LeRobot formats."""
 
-import io
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -22,7 +21,6 @@ import json
 
 from .dataset import Dataset
 from .ffmpeg import VIDEO_PIX_FMT, encode_mp4
-from PIL import Image
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -213,7 +211,7 @@ def _describe_images(frames: list):
 
     total_pixels = 0
     for frame in sampled_frames:
-        with Image.open(io.BytesIO(frame.read_bytes())) as img:
+        with frame.open_image() as img:
             arr = np.asarray(img.convert("RGB"))
 
         h, w = arr.shape[:2]

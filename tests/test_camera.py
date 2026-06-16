@@ -22,7 +22,7 @@ from openarm_dataset.camera import Camera
 CAMERA_DIR = (
     Path(__file__).parent
     / "fixture"
-    / "dataset_0.1.0"
+    / "dataset_0.3.0"
     / "episodes"
     / "0"
     / "cameras"

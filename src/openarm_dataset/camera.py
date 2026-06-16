@@ -31,7 +31,7 @@ class Frame:
     A frame is backed either by a JPEG file on disk or by a member inside a tar
     archive. For tar-backed frames ``path`` is a synthetic ``<archive>/<member>``
     path that locates the image inside the archive; it is not a real file, so use
-    :meth:`load` or :meth:`read_bytes` to access the image data.
+    :meth:`load` or :meth:`open_image` to access the image data.
     """
 
     def __init__(
@@ -62,32 +62,35 @@ class Frame:
         """Compare whether the other is the same frame or not."""
         if not isinstance(other, self.__class__):
             return NotImplemented
-        return self.path == other.path and self._tar_path == other._tar_path
+        return self.path == other.path
 
     @property
     def size(self) -> int:
         """Size of the image in bytes."""
         if self._tar_path is not None:
             return self._size
-        return self.path.stat().st_size
+        else:
+            return self.path.stat().st_size
 
-    def read_bytes(self) -> bytes:
-        """Read the raw (encoded) image bytes of this frame.
-
-        Returns:
-            JPEG-encoded bytes.
-
-        """
+    def _read_bytes(self) -> bytes:
         if self._tar_path is not None:
             with open(self._tar_path, "rb") as f:
                 f.seek(self._offset)
                 return f.read(self._size)
-        return self.path.read_bytes()
+        else:
+            return self.path.read_bytes()
 
-    def _open_image(self) -> Image.Image:
+    def open_image(self) -> Image.Image:
+        """Open the image of this frame as a PIL Image.
+
+        Returns:
+            PIL Image.
+
+        """
         if self._tar_path is not None:
-            return Image.open(io.BytesIO(self.read_bytes()))
-        return Image.open(self.path)
+            return Image.open(io.BytesIO(self._read_bytes()))
+        else:
+            return Image.open(self.path)
 
     def load(self) -> np.ndarray:
         """Load image of this frame.
@@ -96,12 +99,12 @@ class Frame:
             Image array.
 
         """
-        with self._open_image() as image:
+        with self.open_image() as image:
             return np.array(image)
 
     def show(self):
         """Show image of this frame."""
-        with self._open_image() as image:
+        with self.open_image() as image:
             return image.show()
 
     def materialize(self, temp_dir: os.PathLike, index: int | None = None) -> Path:
@@ -120,12 +123,13 @@ class Frame:
             Path to a real JPEG file on disk.
 
         """
-        if self._tar_path is None:
+        if self._tar_path is not None:
+            name = f"{index:08d}.jpg" if index is not None else self.path.name
+            out_path = Path(temp_dir) / name
+            out_path.write_bytes(self._read_bytes())
+            return out_path
+        else:
             return self.path
-        name = f"{index:08d}.jpg" if index is not None else self.path.name
-        out_path = Path(temp_dir) / name
-        out_path.write_bytes(self.read_bytes())
-        return out_path
 
     def _get_timestamp(self) -> float:
         return float(self.path.stem) / 1e9
@@ -232,39 +236,38 @@ class Camera:
         """
         return [frame.timestamp for frame in self.frames()]
 
-    def extract_to(self, dest_dir: os.PathLike):
-        """Write this camera's frames as individual JPEG files under ``dest_dir``.
+    def write(self, output: os.PathLike, format):
+        """Write this camera's frames to ``dest_dir`` in the specified format.
 
         Args:
             dest_dir: Destination directory. Must not already exist.
+            format: Output format, either "dir" for directory of JPEGs or "tar"
+                for uncompressed tar archive.
 
         """
-        dest_dir = Path(dest_dir)
-        if self.tar_path is None:
-            shutil.copytree(self.base_path, dest_dir)
-            return
-        dest_dir.mkdir(parents=True)
-        with tarfile.open(self.tar_path, mode="r:") as tf:
-            for member in tf.getmembers():
-                if not member.isfile():
-                    continue
-                src = tf.extractfile(member)
-                if src is None:
-                    continue
-                (dest_dir / Path(member.name).name).write_bytes(src.read())
+        if format == "dir":
+            dest_dir = Path(output)
+            if self.tar_path is None:
+                shutil.copytree(self.base_path, dest_dir)
+                return
+            dest_dir.mkdir(parents=True)
+            with tarfile.open(self.tar_path, mode="r:") as tf:
+                for member in tf.getmembers():
+                    if not member.isfile():
+                        continue
+                    src = tf.extractfile(member)
+                    if src is None:
+                        continue
+                    (dest_dir / Path(member.name).name).write_bytes(src.read())
 
-    def write_tar(self, dest_tar: os.PathLike):
-        """Pack this camera's frames into an uncompressed tar at ``dest_tar``.
-
-        Args:
-            dest_tar: Destination ``.tar`` path.
-
-        """
-        dest_tar = Path(dest_tar)
-        dest_tar.parent.mkdir(parents=True, exist_ok=True)
-        if self.tar_path is not None:
-            shutil.copy2(self.tar_path, dest_tar)
-            return
-        with tarfile.open(dest_tar, mode="w") as tf:
-            for file in self.all_files:
-                tf.add(file, arcname=file.name)
+        elif format == "tar":
+            dest_tar = Path(output)
+            dest_tar.parent.mkdir(parents=True, exist_ok=True)
+            if self.tar_path is not None:
+                shutil.copy2(self.tar_path, dest_tar)
+                return
+            with tarfile.open(dest_tar, mode="w") as tf:
+                for file in self.all_files:
+                    tf.add(file, arcname=file.name)
+        else:
+            raise ValueError(f"Unsupported format: {format}")
