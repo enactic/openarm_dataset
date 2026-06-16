@@ -96,11 +96,13 @@ class Frame:
             Image array.
 
         """
-        return np.array(self._open_image())
+        with self._open_image() as image:
+            return np.array(image)
 
     def show(self):
         """Show image of this frame."""
-        return self._open_image().show()
+        with self._open_image() as image:
+            return image.show()
 
     def materialize(self, temp_dir: os.PathLike, index: int | None = None) -> Path:
         """Return a real on-disk path to this frame's JPEG.
