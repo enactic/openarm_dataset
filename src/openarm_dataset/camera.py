@@ -237,10 +237,11 @@ class Camera:
         return [frame.timestamp for frame in self.frames()]
 
     def write(self, output: os.PathLike, format):
-        """Write this camera's frames to ``dest_dir`` in the specified format.
+        """Write this camera's frames to ``output`` in the specified format.
 
         Args:
-            dest_dir: Destination directory. Must not already exist.
+            output: Destination path. For "dir" format, a directory that must
+                not already exist; for "tar" format, the archive file to write.
             format: Output format, either "dir" for directory of JPEGs or "tar"
                 for uncompressed tar archive.
 
