@@ -148,18 +148,12 @@ class Camera:
 
         """
         self.name: str = name
-        base_path = Path(base_path)
+        self.base_path = Path(base_path)
         self.tar_path: Path | None = None
-        if base_path.is_dir():
-            self.base_path = base_path
-        elif base_path.suffix == ".tar" and base_path.is_file():
-            self.base_path = base_path
-            self.tar_path = base_path
-        elif base_path.with_suffix(".tar").is_file():
-            self.base_path = base_path
-            self.tar_path = base_path.with_suffix(".tar")
-        else:
-            self.base_path = base_path
+        if not self.base_path.is_dir():
+            tar_path = self.base_path.with_suffix(".tar")
+            if tar_path.is_file():
+                self.tar_path = tar_path
 
         if self.tar_path is not None:
             self.all_files: list[Path] = []
