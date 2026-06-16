@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Camera data for OpenArm Dataset.
-
-A camera's frames may be stored either as individual timestamped JPEG files in a
-directory (``cameras/<name>/<timestamp>.jpeg``) or packed into a single
-uncompressed tar archive (``cameras/<name>.tar``). Both layouts expose the same
-public API; callers do not need to know which one backs a camera.
-"""
+"""Camera data for OpenArm Dataset."""
 
 import io
 import os
@@ -182,8 +176,6 @@ class Camera:
 
     @staticmethod
     def _load_tar_members(tar_path: Path) -> list[tuple[str, int, int]]:
-        # ``r:`` requires an uncompressed tar; this also rejects ``.tar.gz`` and
-        # keeps the recorded data offsets valid for random-access reads.
         members: list[tuple[str, int, int]] = []
         with tarfile.open(tar_path, mode="r:") as tf:
             for m in tf.getmembers():
@@ -267,9 +259,6 @@ class Camera:
 
     def write_tar(self, dest_tar: os.PathLike):
         """Pack this camera's frames into an uncompressed tar at ``dest_tar``.
-
-        Tar-backed cameras copy their existing archive as-is. Members are stored
-        flat as ``<timestamp>.jpeg`` in chronological order.
 
         Args:
             dest_tar: Destination ``.tar`` path.
