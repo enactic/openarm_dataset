@@ -501,5 +501,4 @@ class Dataset:
                     name = "wrist_right"
             cameras_dir = base_path / "cameras"
             cameras_dir.mkdir(parents=True, exist_ok=True)
-            filename = f"{name}.tar" if camera_format == "tar" else name
-            camera.write(cameras_dir / filename, camera_format)
+            camera.write(cameras_dir / name, camera_format)

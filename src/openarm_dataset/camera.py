@@ -194,7 +194,8 @@ class Camera:
         """Get number of frames."""
         if self.tar_path is not None:
             return len(self._members)
-        return len(self.all_files)
+        else:
+            return len(self.all_files)
 
     def get_frame(self, index: int) -> Frame:
         """Get frame at the index.
@@ -208,7 +209,8 @@ class Camera:
         """
         if self.tar_path is not None:
             return self._tar_frame(*self._members[index])
-        return Frame(self.all_files[index])
+        else:
+            return Frame(self.all_files[index])
 
     def frames(self) -> Iterator[Frame]:
         """Iterate all frames.
@@ -259,7 +261,7 @@ class Camera:
                     (dest_dir / Path(member.name).name).write_bytes(src.read())
 
         elif format == "tar":
-            dest_tar = Path(output)
+            dest_tar = Path(output).with_suffix(".tar")
             dest_tar.parent.mkdir(parents=True, exist_ok=True)
             if self.tar_path is not None:
                 shutil.copy2(self.tar_path, dest_tar)

@@ -50,7 +50,8 @@ def _make_tar_camera(tmp_path) -> Camera:
 def camera(request, tmp_path):
     if request.param == "dir":
         return Camera("ceiling", DIR_CAMERA)
-    return _make_tar_camera(tmp_path)
+    else:
+        return _make_tar_camera(tmp_path)
 
 
 # Run every read-API assertion against both the directory and the tar backend so
