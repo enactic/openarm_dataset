@@ -21,7 +21,6 @@ import json
 
 from .dataset import Dataset
 from .ffmpeg import VIDEO_PIX_FMT, encode_mp4
-from PIL import Image
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -95,7 +94,7 @@ def _collect_downsampled_data(
             for s in samples
         ]
         sampled_cameras = {
-            k: [Path(s.cameras[k].path) for s in samples] for k in dataset.camera_names
+            k: [s.cameras[k] for s in samples] for k in dataset.camera_names
         }
         record = (
             episode_index,
@@ -197,7 +196,7 @@ def _describe_scalar(x):
     return result
 
 
-def _describe_images(image_paths: list[Path]):
+def _describe_images(frames: list):
     """Compute per-channel min/max/mean/std for RGB images.
 
     subsampling: pick frames at evenly-spaced indices, then for each
@@ -208,11 +207,11 @@ def _describe_images(image_paths: list[Path]):
     ch_sum = np.zeros(3, dtype=np.float64)
     ch_sumsq = np.zeros(3, dtype=np.float64)
 
-    sampled_paths = [image_paths[i] for i in _sample_image_indices(len(image_paths))]
+    sampled_frames = [frames[i] for i in _sample_image_indices(len(frames))]
 
     total_pixels = 0
-    for path in sampled_paths:
-        with Image.open(path) as img:
+    for frame in sampled_frames:
+        with frame.open_image() as img:
             arr = np.asarray(img.convert("RGB"))
 
         h, w = arr.shape[:2]
@@ -244,7 +243,7 @@ def _describe_images(image_paths: list[Path]):
         "max": [[[float(v / scale)]] for v in ch_max],
         "mean": [[[float(v / scale)]] for v in mean],
         "std": [[[float(v / scale)]] for v in std],
-        "count": [len(sampled_paths)],
+        "count": [len(sampled_frames)],
     }
     return stats
 
