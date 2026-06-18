@@ -85,3 +85,20 @@ def test_tar_input_roundtrips_to_dir(tmp_path):
     assert camera.tar_path is None
     assert camera.num_frames == 3
     assert camera.get_frame(0).load().shape == (600, 960, 3)
+
+
+def test_camera_format_dir():
+    assert Dataset(DATASET_DIR).camera_format == "dir"
+
+
+def test_camera_format_tar(tar_dataset):
+    assert tar_dataset.camera_format == "tar"
+
+
+def test_camera_format_inconsistent_raises(tmp_path):
+    out = tmp_path / "mixed"
+    Dataset(DATASET_DIR).write(out, format="openarm", camera_format="tar")
+    # Turn one camera back into "dir" layout so the dataset mixes both formats.
+    (out / "episodes" / "0" / "cameras" / "head").mkdir()
+    with pytest.raises(ValueError, match="Inconsistent camera formats"):
+        Dataset(out).camera_format

@@ -197,6 +197,11 @@ class Camera:
         else:
             return len(self.all_files)
 
+    @property
+    def format(self) -> str:
+        """Get camera format, either "dir" or "tar"."""
+        return "tar" if self.tar_path is not None else "dir"
+
     def get_frame(self, index: int) -> Frame:
         """Get frame at the index.
 
@@ -247,7 +252,7 @@ class Camera:
         """
         if format == "dir":
             dest_dir = Path(output)
-            if self.tar_path is None:
+            if self.format == "dir":
                 shutil.copytree(self.base_path, dest_dir)
                 return
             dest_dir.mkdir(parents=True)
@@ -263,7 +268,7 @@ class Camera:
         elif format == "tar":
             dest_tar = Path(output).with_suffix(".tar")
             dest_tar.parent.mkdir(parents=True, exist_ok=True)
-            if self.tar_path is not None:
+            if self.format == "tar":
                 shutil.copy2(self.tar_path, dest_tar)
                 return
             with tarfile.open(dest_tar, mode="w") as tf:

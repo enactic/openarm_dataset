@@ -148,6 +148,23 @@ flags apply only when `--format lerobot_v2.1` or `--format gr00t`.
 The `gr00t` format produces a LeRobot v2.1 dataset plus a GR00T-compatible
 `meta/modality.json` (see [Isaac-GR00T data preparation](https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/data_preparation.md)).
 
+Upload a dataset to the Hugging Face Hub:
+
+```bash
+openarm-dataset-upload <input> \
+    --repo-id <user>/<dataset> \
+    [--private]                # create the repo as private if it does not exist
+```
+
+The whole dataset directory is uploaded to a
+[dataset repository](https://huggingface.co/docs/hub/datasets), creating it if it
+does not already exist, and tagged with the dataset version. Cameras stored as
+directories of JPEG files are repacked **in place** into one `.tar` archive per
+camera before uploading, to stay within [Hugging Face Hub's file-count
+recommendations](https://huggingface.co/docs/hub/storage-limits#recommendations).
+Repacking is lossless and reversible (`openarm-dataset-convert --camera-format dir`
+restores the JPEG-directory layout).
+
 ## Development
 
 ### Test
