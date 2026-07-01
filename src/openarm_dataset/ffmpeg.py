@@ -14,6 +14,7 @@
 
 """FFmpeg helpers for encoding image frames into a video file."""
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -55,7 +56,14 @@ def _is_valid_exe(exe: str) -> bool:
 
 
 def _escape_concat_path(path: Path) -> str:
-    return str(path.resolve()).replace("'", "'\\''")
+    # ``os.path.abspath`` normalises to an absolute path purely lexically, so
+    # (unlike ``Path.resolve``) it issues no filesystem syscalls. This matters a
+    # lot when frames live on a network filesystem: ``resolve`` triggers a
+    # LOOKUP RPC per path component for every frame, and because that runs under
+    # the GIL it serialises all concurrent ffmpeg encodes before they even
+    # start. The concat demuxer only needs a valid absolute path, not the
+    # symlink-resolved real path.
+    return os.path.abspath(path).replace("'", "'\\''")
 
 
 def encode_mp4(

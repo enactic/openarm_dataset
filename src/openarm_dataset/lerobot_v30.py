@@ -141,6 +141,23 @@ def _write_packed_parquet(
     return episodes_data_meta, gidx
 
 
+def _estimate_avg_frame_size_mb(ep_frame_lists: list[list], max_samples: int = 128):
+    """Estimate a camera's average source bytes-per-frame, in MB.
+
+    Stats only a bounded sample of frames (one per evenly-spaced episode)
+    instead of every frame, so the file-packing size estimate costs a few
+    hundred ``stat()`` calls rather than one per frame -- decisive on NFS, where
+    each stat is a network round-trip. Returns 0.0 when there are no frames.
+    """
+    non_empty = [fl for fl in ep_frame_lists if fl]
+    if not non_empty:
+        return 0.0
+    step = max(1, len(non_empty) // max_samples)
+    sampled_frames = [fl[len(fl) // 2] for fl in non_empty[::step]]
+    avg_bytes = sum(f.size for f in sampled_frames) / len(sampled_frames)
+    return avg_bytes / (1024**2)
+
+
 def _calibrate_compression_ratio(
     frames: list, src_size_in_mb: float, fps: int
 ) -> float:
@@ -224,13 +241,11 @@ def _write_packed_videos(
     """
     episodes_video_meta: list[dict] = [{} for _ in records]
 
-    # Gather each camera's frame lists and source sizes (no encoding here).
+    # Gather each camera's frame lists (cheap, in-memory; no encoding here).
     cam_frames: dict[str, list] = {}
-    cam_src_sizes: dict[str, list] = {}
     for camera_key in dataset.camera_names:
         image_name = _get_image_name_from_key(camera_key)
         ep_frame_lists: list[list] = []
-        ep_src_sizes_in_mb: list[float] = []
         for episode_index, num_frames, _, _, sampled_cameras in records:
             frames = sampled_cameras[camera_key]
             if len(frames) != num_frames:
@@ -240,11 +255,19 @@ def _write_packed_videos(
                     f"{num_frames} frames; video/data are out of sync."
                 )
             ep_frame_lists.append(frames)
-            ep_src_sizes_in_mb.append(sum(f.size for f in frames) / (1024**2))
         cam_frames[image_name] = ep_frame_lists
-        cam_src_sizes[image_name] = ep_src_sizes_in_mb
 
     image_names = [_get_image_name_from_key(c) for c in dataset.camera_names]
+
+    # Approximate each episode's source size as ``frame_count * avg_frame_mb``.
+    # File packing only needs a rough size, and reading every frame's size
+    # stats the file -- a network round-trip per frame on NFS, millions in
+    # total. A camera's JPEGs are similarly sized, so sampling a few frames per
+    # camera gives a good-enough average with a handful of stat() calls.
+    cam_src_sizes: dict[str, list] = {}
+    for name in image_names:
+        avg_frame_mb = _estimate_avg_frame_size_mb(cam_frames[name])
+        cam_src_sizes[name] = [len(fl) * avg_frame_mb for fl in cam_frames[name]]
 
     # Calibrate a compression ratio per camera (one sample encode each), in
     # parallel across cameras.
