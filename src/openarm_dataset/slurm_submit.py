@@ -133,28 +133,34 @@ def _write_scripts(args) -> tuple[Path, Path, Path, Path]:
     return convert_path, aggregate_path, shards_dir, output
 
 
+def _sbatch(cmd: list[str]) -> str:
+    """Run an sbatch command, surfacing its stderr on failure."""
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(
+            f"sbatch failed (exit {result.returncode}): {message}\n"
+            f"Command: {' '.join(cmd)}\n"
+            "Re-run with --dry-run to inspect the scripts, or adjust the SLURM "
+            "options (e.g. drop --mem on clusters that do not schedule memory)."
+        )
+    return result.stdout.strip()
+
+
 def _submit(convert_path: Path, aggregate_path: Path) -> None:
     if shutil.which("sbatch") is None:
         raise RuntimeError(
             "sbatch not found on PATH; use --dry-run to only write the scripts."
         )
-    array_id = subprocess.run(
-        ["sbatch", "--parsable", str(convert_path)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    aggregate_id = subprocess.run(
+    array_id = _sbatch(["sbatch", "--parsable", str(convert_path)])
+    aggregate_id = _sbatch(
         [
             "sbatch",
             "--parsable",
             f"--dependency=afterok:{array_id}",
             str(aggregate_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+        ]
+    )
     print(f"Submitted shard-convert array job: {array_id}")
     print(f"Submitted aggregate job (afterok): {aggregate_id}")
 
