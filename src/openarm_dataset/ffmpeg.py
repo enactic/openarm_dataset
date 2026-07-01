@@ -58,12 +58,19 @@ def _escape_concat_path(path: Path) -> str:
     return str(path.resolve()).replace("'", "'\\''")
 
 
-def encode_mp4(frames, fps: int, out_mp4: Path, verbose=True):
+def encode_mp4(
+    frames, fps: int, out_mp4: Path, verbose=True, threads: int | None = None
+):
     """Encode the given image frames into an MP4 file using FFmpeg.
 
     ``frames`` is a list of :class:`~openarm_dataset.camera.Frame` objects.
     Directory-backed frames are read in place; tar-backed frames are extracted
     into a temporary directory for the duration of the encode.
+
+    ``threads`` caps the number of threads a single ffmpeg process uses; leave
+    it ``None`` for ffmpeg's default. It is set to a small value when many
+    encodes run concurrently, so the processes share cores rather than each
+    grabbing all of them.
     """
     if not frames:
         return
@@ -103,6 +110,8 @@ def encode_mp4(frames, fps: int, out_mp4: Path, verbose=True):
             "veryfast",
             "-pix_fmt",
             VIDEO_PIX_FMT,
-            str(out_mp4),
         ]
+        if threads is not None:
+            cmd += ["-threads", str(threads)]
+        cmd.append(str(out_mp4))
         subprocess.run(cmd, check=True, capture_output=not verbose)

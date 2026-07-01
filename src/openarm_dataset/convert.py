@@ -63,6 +63,14 @@ def main():
         default=False,
     )
     parser.add_argument(
+        "--jobs",
+        "-j",
+        help="Number of parallel workers for lerobot_v2.1, lerobot_v3.0 or gr00t "
+        "conversion (default: all CPU cores; 1 = serial)",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
         "--camera-format",
         help="How to store camera frames when the output format is openarm: "
         "'dir' (one JPEG file per frame, default) or 'tar' (one .tar archive "
@@ -78,6 +86,7 @@ def main():
         write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
         write_kwargs["train_split"] = args.train_split
         write_kwargs["success_only"] = args.success_only
+        write_kwargs["jobs"] = args.jobs
     else:
         write_kwargs["camera_format"] = args.camera_format
 

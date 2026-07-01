@@ -21,6 +21,7 @@ import json
 
 from .dataset import Dataset
 from .ffmpeg import VIDEO_PIX_FMT, encode_mp4
+from .parallel import ffmpeg_threads_for, parallel_map, thread_map
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -76,35 +77,78 @@ def _collect_keys_and_joint_names(dataset: Dataset):
     return keys, joint_names
 
 
+# Per-worker state, populated once per process by ``_init_episode_worker`` so
+# the large ``Dataset`` (metadata) is shipped to each worker a single time
+# rather than pickled with every task.
+_WORKER: dict = {}
+
+
+def _init_episode_worker(dataset: Dataset, fps: int, joint_keys) -> None:
+    _WORKER["dataset"] = dataset
+    _WORKER["fps"] = fps
+    _WORKER["joint_keys"] = joint_keys
+
+
+def _process_one_episode(episode_index: int):
+    """Load, downsample and image-stat a single episode (runs in a worker).
+
+    Returns ``(record, image_stats)`` where ``record`` is the same tuple the
+    serial collector produced and ``image_stats`` maps each camera to its
+    precomputed :func:`_describe_images` result. Decoding the sampled JPEGs here
+    means it happens once, in parallel, in the process that already loaded the
+    episode; only the small stat dicts travel back, not the decoded images.
+    """
+    dataset: Dataset = _WORKER["dataset"]
+    fps: int = _WORKER["fps"]
+    joint_keys = _WORKER["joint_keys"]
+
+    episode = dataset.meta.episodes[episode_index]
+    samples = dataset.sample(hz=fps, episode=episode)
+    num_frames = len(samples)
+    sampled_obs = [
+        np.concatenate([s.obs[k] for k in joint_keys], axis=0).astype(np.float32)
+        for s in samples
+    ]
+    sampled_actions = [
+        np.concatenate([s.action[k] for k in joint_keys], axis=0).astype(np.float32)
+        for s in samples
+    ]
+    sampled_cameras = {k: [s.cameras[k] for s in samples] for k in dataset.camera_names}
+    image_stats = {k: _describe_images(frames) for k, frames in sampled_cameras.items()}
+    record = (
+        episode_index,
+        num_frames,
+        sampled_obs,
+        sampled_actions,
+        sampled_cameras,
+    )
+    return record, image_stats
+
+
 def _collect_downsampled_data(
-    dataset: Dataset, fps: int, joint_keys, success_only=False
+    dataset: Dataset, fps: int, joint_keys, jobs: int | None = None, success_only=False
 ):
-    records = []
-    for episode_index, episode in enumerate(dataset.meta.episodes):
-        if not episode["success"] and success_only:
-            continue
-        samples = dataset.sample(hz=fps, episode=episode)
-        num_frames = len(samples)
-        sampled_obs = [
-            np.concatenate([s.obs[k] for k in joint_keys], axis=0).astype(np.float32)
-            for s in samples
-        ]
-        sampled_actions = [
-            np.concatenate([s.action[k] for k in joint_keys], axis=0).astype(np.float32)
-            for s in samples
-        ]
-        sampled_cameras = {
-            k: [s.cameras[k] for s in samples] for k in dataset.camera_names
-        }
-        record = (
-            episode_index,
-            num_frames,
-            sampled_obs,
-            sampled_actions,
-            sampled_cameras,
-        )
-        records.append(record)
-    return records
+    """Downsample every (selected) episode in parallel across processes.
+
+    Returns ``(records, episode_image_stats)`` — two lists aligned by position
+    and ordered exactly as the episodes appear in the metadata, so downstream
+    assembly is identical to the serial path.
+    """
+    episode_indices = [
+        index
+        for index, episode in enumerate(dataset.meta.episodes)
+        if episode["success"] or not success_only
+    ]
+    results = parallel_map(
+        _process_one_episode,
+        episode_indices,
+        jobs,
+        initializer=_init_episode_worker,
+        initargs=(dataset, fps, joint_keys),
+    )
+    records = [record for record, _ in results]
+    episode_image_stats = [image_stats for _, image_stats in results]
+    return records, episode_image_stats
 
 
 def _build_remaps(dataset: Dataset, records):
@@ -255,7 +299,7 @@ def _calc_episode_stats(
     gidx: int,
     task_index,
     fps: int,
-    cameras,
+    image_stats,
 ) -> dict:
     length = len(sampled_obs)
     actions = np.vstack(sampled_actions).astype(np.float32)
@@ -280,8 +324,8 @@ def _calc_episode_stats(
     stats["stats"]["task_index"] = _describe_scalar(
         np.full(length, task_index, dtype=np.int64)
     )
-    for cam_key, cam_paths in cameras.items():
-        stats["stats"][_get_image_name_from_key(cam_key)] = _describe_images(cam_paths)
+    for cam_key, cam_stats in image_stats.items():
+        stats["stats"][_get_image_name_from_key(cam_key)] = cam_stats
     return stats
 
 
@@ -322,7 +366,8 @@ def _write_parquet(
         gidx += num_frames
 
 
-def _write_videos(dataset, records, output_dir, fps, remap_episode_index):
+def _write_videos(dataset, records, output_dir, fps, remap_episode_index, jobs=None):
+    encode_tasks = []
     for episode_index, _, _, _, sampled_cameras in records:
         lerobot_episode_index = remap_episode_index[episode_index]
         for camera_key in dataset.camera_names:
@@ -333,13 +378,22 @@ def _write_videos(dataset, records, output_dir, fps, remap_episode_index):
                 / _get_image_name_from_key(camera_key)
                 / f"episode_{lerobot_episode_index:06d}.mp4"
             )
-            video_path.parent.mkdir(parents=True, exist_ok=True)
-            encode_mp4(sampled_cameras[camera_key], fps, video_path)
+            encode_tasks.append((video_path, sampled_cameras[camera_key]))
+
+    threads = ffmpeg_threads_for(jobs, len(encode_tasks))
+
+    def _encode(task):
+        video_path, frames = task
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        encode_mp4(frames, fps, video_path, verbose=False, threads=threads)
+
+    thread_map(_encode, encode_tasks, jobs)
 
 
 def _write_metadata(
     dataset,
     records,
+    episode_image_stats,
     output_dir,
     fps,
     train_split,
@@ -361,13 +415,13 @@ def _write_metadata(
     last_frame_index_all = []
 
     gidx = 0
-    for (
+    for idx, (
         episode_index,
         num_frames,
         sampled_obs,
         sampled_actions,
         sampled_cameras,
-    ) in records:
+    ) in enumerate(records):
         lerobot_episode_index = remap_episode_index[episode_index]
         lerobot_task_index = remap_task_index[
             int(dataset.meta.episodes[episode_index]["task_index"])
@@ -409,7 +463,7 @@ def _write_metadata(
             gidx,
             lerobot_task_index,
             fps,
-            sampled_cameras,
+            episode_image_stats[idx],
         )
         episodes_stats.append(stats)
         gidx += len(sampled_obs)
@@ -631,8 +685,14 @@ def to_lerobotv21(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
+    jobs: int | None = None,
 ) -> None:
-    """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory."""
+    """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory.
+
+    ``jobs`` controls the number of worker processes/threads used to load,
+    downsample, stat, and video-encode episodes in parallel. ``None`` (the
+    default) uses every core; ``1`` runs serially.
+    """
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
 
@@ -648,7 +708,9 @@ def to_lerobotv21(
     joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
 
     # collect downsampled data for each episode
-    records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
+    records, episode_image_stats = _collect_downsampled_data(
+        dataset, fps, joint_keys, jobs=jobs, success_only=success_only
+    )
 
     if not records:
         raise ValueError("No episodes to write.")
@@ -661,11 +723,12 @@ def to_lerobotv21(
         dataset, records, output_dir, fps, remap_episode_index, remap_task_index
     )
     # save_videos for each episode (output_dir/videos)
-    _write_videos(dataset, records, output_dir, fps, remap_episode_index)
+    _write_videos(dataset, records, output_dir, fps, remap_episode_index, jobs=jobs)
     # episodes metadata and stats
     _write_metadata(
         dataset,
         records,
+        episode_image_stats,
         output_dir,
         fps,
         train_split,
@@ -682,6 +745,7 @@ def to_gr00t(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
+    jobs: int | None = None,
 ) -> None:
     """Convert the given dataset to GR00T LeRobot format.
 
@@ -696,5 +760,6 @@ def to_gr00t(
         train_split=train_split,
         smoothing_cutoff=smoothing_cutoff,
         success_only=success_only,
+        jobs=jobs,
     )
     _write_modality_json(dataset, output_dir)
