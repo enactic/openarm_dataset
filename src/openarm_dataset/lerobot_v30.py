@@ -31,12 +31,12 @@ from .lerobot_v21 import (
     _collect_downsampled_data,
     _collect_keys_and_joint_names,
     _build_remaps,
-    _describe_images,
     _describe_scalar,
     _describe_vector,
     _get_image_name_from_key,
 )
 from .ffmpeg import encode_mp4
+from .parallel import ffmpeg_threads_for, thread_map
 
 CODEBASE_VERSION = "v3.0"
 DATA_FILES_SIZE_IN_MB = 100
@@ -141,7 +141,89 @@ def _write_packed_parquet(
     return episodes_data_meta, gidx
 
 
-def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index):
+def _estimate_avg_frame_size_mb(ep_frame_lists: list[list], max_samples: int = 128):
+    """Estimate a camera's average source bytes-per-frame, in MB.
+
+    Stats only a bounded sample of frames (one per evenly-spaced episode)
+    instead of every frame, so the file-packing size estimate costs a few
+    hundred ``stat()`` calls rather than one per frame -- decisive on NFS, where
+    each stat is a network round-trip. Returns 0.0 when there are no frames.
+    """
+    non_empty = [fl for fl in ep_frame_lists if fl]
+    if not non_empty:
+        return 0.0
+    step = max(1, len(non_empty) // max_samples)
+    sampled_frames = [fl[len(fl) // 2] for fl in non_empty[::step]]
+    avg_bytes = sum(f.size for f in sampled_frames) / len(sampled_frames)
+    return avg_bytes / (1024**2)
+
+
+def _calibrate_compression_ratio(
+    frames: list, src_size_in_mb: float, fps: int
+) -> float:
+    """Estimate encoded-size / source-size by encoding ``frames`` once.
+
+    Mirrors the parquet size estimation: a single throwaway encode gives a
+    per-camera ratio used to plan file boundaries up front.
+    """
+    if not frames or src_size_in_mb <= 0:
+        return 1.0
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
+        tmp_mp4 = Path(tmp.name)
+        encode_mp4(frames, fps, tmp_mp4, verbose=False)
+        return _get_file_size_in_mb(tmp_mp4) / src_size_in_mb
+
+
+def _plan_camera_files(image_name, ep_frame_lists, ep_src_sizes_in_mb, ratio, fps):
+    """Assign a camera's episodes to packed files by estimated size.
+
+    Uses a fixed compression ``ratio`` (no online refinement) so the assignment
+    is a pure, deterministic pass and every file can then be encoded
+    independently in parallel. Returns ``(encode_jobs, ep_meta)`` where
+    ``encode_jobs`` is a list of ``(chunk_idx, file_idx, frames)`` and
+    ``ep_meta`` is a per-episode dict of the four ``videos/<image_name>/*``
+    fields, aligned with ``ep_frame_lists``.
+    """
+    encode_jobs: list[tuple[int, int, list]] = []
+    ep_meta: list[dict] = [{} for _ in ep_frame_lists]
+
+    chunk_idx = 0
+    file_idx = 0
+    src_in_mb = 0.0
+    frames_in_file = 0
+    pending_frames: list = []
+
+    for idx, frames in enumerate(ep_frame_lists):
+        est_size_in_mb = (src_in_mb + ep_src_sizes_in_mb[idx]) * ratio
+
+        if est_size_in_mb >= VIDEO_FILES_SIZE_IN_MB and pending_frames:
+            encode_jobs.append((chunk_idx, file_idx, pending_frames))
+            chunk_idx, file_idx = _update_chunk_file_indices(chunk_idx, file_idx)
+            src_in_mb = 0.0
+            frames_in_file = 0
+            pending_frames = []
+
+        from_ts = frames_in_file / float(fps)
+        to_ts = (frames_in_file + len(frames)) / float(fps)
+        ep_meta[idx] = {
+            f"videos/{image_name}/chunk_index": chunk_idx,
+            f"videos/{image_name}/file_index": file_idx,
+            f"videos/{image_name}/from_timestamp": from_ts,
+            f"videos/{image_name}/to_timestamp": to_ts,
+        }
+        pending_frames.extend(frames)
+        src_in_mb += ep_src_sizes_in_mb[idx]
+        frames_in_file += len(frames)
+
+    if pending_frames:
+        encode_jobs.append((chunk_idx, file_idx, pending_frames))
+
+    return encode_jobs, ep_meta
+
+
+def _write_packed_videos(
+    dataset, records, output_dir, fps, remap_episode_index, jobs=None
+):
     """Encode packed video files, one ffmpeg pass per file (no mp4 concat).
 
     Each output ``file-XXX.mp4`` is encoded in a single pass directly from the
@@ -149,18 +231,21 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
     (rather than concatenating separately-encoded per-episode clips with
     ``-c copy``) guarantees a strictly uniform ``i / fps`` presentation-timestamp
     grid.
-    File sizes track ``VIDEO_FILES_SIZE_IN_MB`` approximately rather than exactly.
+
+    File boundaries are planned up front from a fixed per-camera compression
+    ratio, so every file is independent and all files (across all cameras) are
+    encoded in parallel. File sizes track ``VIDEO_FILES_SIZE_IN_MB``
+    approximately rather than exactly.
 
     Returns a list of dicts with per-episode video metadata.
     """
     episodes_video_meta: list[dict] = [{} for _ in records]
 
+    # Gather each camera's frame lists (cheap, in-memory; no encoding here).
+    cam_frames: dict[str, list] = {}
     for camera_key in dataset.camera_names:
         image_name = _get_image_name_from_key(camera_key)
-
-        # Collect frame lists and their source sizes (no encoding here).
         ep_frame_lists: list[list] = []
-        ep_src_sizes_in_mb: list[float] = []
         for episode_index, num_frames, _, _, sampled_cameras in records:
             frames = sampled_cameras[camera_key]
             if len(frames) != num_frames:
@@ -170,69 +255,55 @@ def _write_packed_videos(dataset, records, output_dir, fps, remap_episode_index)
                     f"{num_frames} frames; video/data are out of sync."
                 )
             ep_frame_lists.append(frames)
-            ep_src_sizes_in_mb.append(sum(f.size for f in frames) / (1024**2))
+        cam_frames[image_name] = ep_frame_lists
 
-        # Calibrate the compression ratio by encoding the first episode once
-        # into a temporary file, mirroring the parquet size estimation above.
-        compression_ratio = 1.0
-        if ep_src_sizes_in_mb and ep_src_sizes_in_mb[0] > 0:
-            with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-                tmp_mp4 = Path(tmp.name)
-                encode_mp4(ep_frame_lists[0], fps, tmp_mp4, verbose=False)
-                compression_ratio = (
-                    _get_file_size_in_mb(tmp_mp4) / ep_src_sizes_in_mb[0]
-                )
+    image_names = [_get_image_name_from_key(c) for c in dataset.camera_names]
 
-        # Pack episodes into file-XXX by estimated size. The ratio is refined from each packed file actually written.
-        chunk_idx = 0
-        file_idx = 0
-        src_in_mb = 0.0
-        frames_in_file = 0
-        pending_frames: list = []
-        ep_assignments: list[tuple[int, int, float, float]] = []
+    # Approximate each episode's source size as ``frame_count * avg_frame_mb``.
+    # File packing only needs a rough size, and reading every frame's size
+    # stats the file -- a network round-trip per frame on NFS, millions in
+    # total. A camera's JPEGs are similarly sized, so sampling a few frames per
+    # camera gives a good-enough average with a handful of stat() calls.
+    cam_src_sizes: dict[str, list] = {}
+    for name in image_names:
+        avg_frame_mb = _estimate_avg_frame_size_mb(cam_frames[name])
+        cam_src_sizes[name] = [len(fl) * avg_frame_mb for fl in cam_frames[name]]
 
-        for idx, frames in enumerate(
-            tqdm(ep_frame_lists, desc=f"Encoding videos/{image_name}", unit="ep")
-        ):
-            est_size_in_mb = (src_in_mb + ep_src_sizes_in_mb[idx]) * compression_ratio
+    # Calibrate a compression ratio per camera (one sample encode each), in
+    # parallel across cameras.
+    ratios = thread_map(
+        lambda name: _calibrate_compression_ratio(
+            cam_frames[name][0] if cam_frames[name] else [],
+            cam_src_sizes[name][0] if cam_src_sizes[name] else 0.0,
+            fps,
+        ),
+        image_names,
+        jobs,
+    )
 
-            if est_size_in_mb >= VIDEO_FILES_SIZE_IN_MB and pending_frames:
-                out_path = output_dir / VIDEO_PATH.format(
-                    video_key=image_name,
-                    chunk_index=chunk_idx,
-                    file_index=file_idx,
-                )
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                encode_mp4(pending_frames, fps, out_path, verbose=False)
-                if src_in_mb > 0:
-                    compression_ratio = _get_file_size_in_mb(out_path) / src_in_mb
-
-                chunk_idx, file_idx = _update_chunk_file_indices(chunk_idx, file_idx)
-                src_in_mb = 0.0
-                frames_in_file = 0
-                pending_frames = []
-
-            from_ts = frames_in_file / float(fps)
-            to_ts = (frames_in_file + len(frames)) / float(fps)
-            ep_assignments.append((chunk_idx, file_idx, from_ts, to_ts))
-            pending_frames.extend(frames)
-            src_in_mb += ep_src_sizes_in_mb[idx]
-            frames_in_file += len(frames)
-
-        if pending_frames:
+    # Plan file boundaries per camera and collect every file's encode job.
+    encode_jobs: list[tuple[Path, list]] = []
+    for name, ratio in zip(image_names, ratios):
+        cam_jobs, ep_meta = _plan_camera_files(
+            name, cam_frames[name], cam_src_sizes[name], ratio, fps
+        )
+        for chunk_idx, file_idx, frames in cam_jobs:
             out_path = output_dir / VIDEO_PATH.format(
-                video_key=image_name,
-                chunk_index=chunk_idx,
-                file_index=file_idx,
+                video_key=name, chunk_index=chunk_idx, file_index=file_idx
             )
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            encode_mp4(pending_frames, fps, out_path, verbose=False)
+            encode_jobs.append((out_path, frames))
+        for idx, meta in enumerate(ep_meta):
+            episodes_video_meta[idx].update(meta)
 
-        for idx, (c, f, from_ts, to_ts) in enumerate(ep_assignments):
-            episodes_video_meta[idx][f"videos/{image_name}/chunk_index"] = c
-            episodes_video_meta[idx][f"videos/{image_name}/file_index"] = f
-            episodes_video_meta[idx][f"videos/{image_name}/from_timestamp"] = from_ts
-            episodes_video_meta[idx][f"videos/{image_name}/to_timestamp"] = to_ts
+    # Encode all files (across all cameras) in parallel, one ffmpeg pass each.
+    threads = ffmpeg_threads_for(jobs, len(encode_jobs))
+
+    def _encode(job):
+        out_path, frames = job
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        encode_mp4(frames, fps, out_path, verbose=False, threads=threads)
+
+    thread_map(_encode, encode_jobs, jobs, desc="Encoding videos")
 
     return episodes_video_meta
 
@@ -244,7 +315,7 @@ def _calc_episode_stats_numpy(
     gidx,
     task_index,
     fps,
-    cameras,
+    image_stats,
 ):
     """Compute per-episode stats as numpy arrays for v3.0 episodes parquet."""
     length = len(sampled_obs)
@@ -270,10 +341,9 @@ def _calc_episode_stats_numpy(
         for stat_name, value in desc.items():
             stats[f"{key}/{stat_name}"] = np.array(value)
 
-    for cam_key, cam_paths in cameras.items():
+    for cam_key, cam_stats in image_stats.items():
         image_name = _get_image_name_from_key(cam_key)
-        desc = _describe_images(cam_paths)
-        for stat_name, value in desc.items():
+        for stat_name, value in cam_stats.items():
             stats[f"{image_name}/{stat_name}"] = np.array(value)
 
     return stats
@@ -370,6 +440,7 @@ def _serialize_stats(stats):
 def _write_episodes_and_stats(
     dataset,
     records,
+    episode_image_stats,
     output_dir,
     fps,
     remap_episode_index,
@@ -417,7 +488,7 @@ def _write_episodes_and_stats(
             gidx,
             lerobot_task_index,
             fps,
-            sampled_cameras,
+            episode_image_stats[idx],
         )
 
         for stat_key, stat_value in ep_stats.items():
@@ -566,8 +637,14 @@ def to_lerobotv30(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
+    jobs: int | None = None,
 ) -> None:
-    """Convert the given dataset to LeRobot v3.0 format."""
+    """Convert the given dataset to LeRobot v3.0 format.
+
+    ``jobs`` controls the number of worker processes/threads used to load,
+    downsample, stat, and video-encode episodes in parallel. ``None`` (the
+    default) uses every core; ``1`` runs serially.
+    """
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
     if fps <= 0:
@@ -577,7 +654,9 @@ def to_lerobotv30(
     output_dir = Path(output_dir)
 
     joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
-    records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
+    records, episode_image_stats = _collect_downsampled_data(
+        dataset, fps, joint_keys, jobs=jobs, success_only=success_only
+    )
 
     if not records:
         raise ValueError("No episodes to write.")
@@ -589,12 +668,13 @@ def to_lerobotv30(
     )
 
     episodes_video_meta = _write_packed_videos(
-        dataset, records, output_dir, fps, remap_episode_index
+        dataset, records, output_dir, fps, remap_episode_index, jobs=jobs
     )
 
     _write_episodes_and_stats(
         dataset,
         records,
+        episode_image_stats,
         output_dir,
         fps,
         remap_episode_index,
