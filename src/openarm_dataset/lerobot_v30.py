@@ -280,7 +280,7 @@ def _write_packed_videos(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         encode_mp4(frames, fps, out_path, verbose=False, threads=threads)
 
-    thread_map(_encode, encode_jobs, jobs)
+    thread_map(_encode, encode_jobs, jobs, desc="Encoding videos")
 
     return episodes_video_meta
 

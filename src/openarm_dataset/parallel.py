@@ -26,7 +26,20 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+
+from tqdm import tqdm
+
+
+def _progress(iterable, desc, total=None):
+    """Wrap ``iterable`` in a tqdm bar when ``desc`` is given, else pass through.
+
+    ``mininterval`` is set high enough that redirected SLURM logs stay compact
+    while ``tail -f`` still shows a live-updating bar.
+    """
+    if desc is None:
+        return iterable
+    return tqdm(iterable, desc=desc, total=total, mininterval=1.0)
 
 
 def resolve_jobs(jobs: int | None) -> int:
@@ -46,6 +59,7 @@ def parallel_map(
     jobs: int | None,
     initializer: Callable | None = None,
     initargs: Sequence = (),
+    desc: str | None = None,
 ) -> list:
     """Map ``func`` over ``items`` across processes, preserving input order.
 
@@ -55,6 +69,7 @@ def parallel_map(
     ``initializer`` (if given) is still called once so ``func`` sees the same
     process-global state it would in a worker.
 
+    ``desc`` shows a tqdm progress bar that advances as items complete.
     Exceptions raised by ``func`` propagate to the caller (fail fast); a partial
     conversion is not useful.
     """
@@ -63,28 +78,37 @@ def parallel_map(
     if resolved <= 1 or len(items) <= 1:
         if initializer is not None:
             initializer(*initargs)
-        return [func(item) for item in items]
+        return [func(item) for item in _progress(items, desc)]
     with ProcessPoolExecutor(
         max_workers=min(resolved, len(items)),
         initializer=initializer,
         initargs=tuple(initargs),
     ) as executor:
-        return list(executor.map(func, items))
+        futures = [executor.submit(func, item) for item in items]
+        for _ in _progress(as_completed(futures), desc, total=len(futures)):
+            pass
+        return [future.result() for future in futures]
 
 
-def thread_map(func: Callable, items: Iterable, jobs: int | None) -> list:
+def thread_map(
+    func: Callable, items: Iterable, jobs: int | None, desc: str | None = None
+) -> list:
     """Map ``func`` over ``items`` across threads, preserving input order.
 
     Intended for subprocess-bound work (``ffmpeg``) where the GIL is released
     while the external process runs, so threads give real concurrency without
-    pickling closures or large frame lists.
+    pickling closures or large frame lists. ``desc`` shows a tqdm progress bar
+    that advances as items complete.
     """
     items = list(items)
     resolved = resolve_jobs(jobs)
     if resolved <= 1 or len(items) <= 1:
-        return [func(item) for item in items]
+        return [func(item) for item in _progress(items, desc)]
     with ThreadPoolExecutor(max_workers=min(resolved, len(items))) as executor:
-        return list(executor.map(func, items))
+        futures = [executor.submit(func, item) for item in items]
+        for _ in _progress(as_completed(futures), desc, total=len(futures)):
+            pass
+        return [future.result() for future in futures]
 
 
 def ffmpeg_threads_for(jobs: int | None, num_encodes: int) -> int:

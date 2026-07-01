@@ -155,6 +155,7 @@ def _collect_downsampled_data(
         jobs,
         initializer=_init_episode_worker,
         initargs=(dataset, fps, joint_keys),
+        desc="Loading episodes",
     )
     records = [record for record, _ in results]
     episode_image_stats = [image_stats for _, image_stats in results]
@@ -397,7 +398,7 @@ def _write_videos(dataset, records, output_dir, fps, remap_episode_index, jobs=N
         video_path.parent.mkdir(parents=True, exist_ok=True)
         encode_mp4(frames, fps, video_path, verbose=False, threads=threads)
 
-    thread_map(_encode, encode_tasks, jobs)
+    thread_map(_encode, encode_tasks, jobs, desc="Encoding videos")
 
 
 def _write_metadata(
