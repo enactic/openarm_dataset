@@ -57,12 +57,7 @@ def _is_valid_exe(exe: str) -> bool:
 
 def _escape_concat_path(path: Path) -> str:
     # ``os.path.abspath`` normalises to an absolute path purely lexically, so
-    # (unlike ``Path.resolve``) it issues no filesystem syscalls. This matters a
-    # lot when frames live on a network filesystem: ``resolve`` triggers a
-    # LOOKUP RPC per path component for every frame, and because that runs under
-    # the GIL it serialises all concurrent ffmpeg encodes before they even
-    # start. The concat demuxer only needs a valid absolute path, not the
-    # symlink-resolved real path.
+    # (unlike ``Path.resolve``) it issues no filesystem syscalls.
     return os.path.abspath(path).replace("'", "'\\''")
 
 
@@ -76,9 +71,7 @@ def encode_mp4(
     into a temporary directory for the duration of the encode.
 
     ``threads`` caps the number of threads a single ffmpeg process uses; leave
-    it ``None`` for ffmpeg's default. It is set to a small value when many
-    encodes run concurrently, so the processes share cores rather than each
-    grabbing all of them.
+    it ``None`` for ffmpeg's default.
     """
     if not frames:
         return
