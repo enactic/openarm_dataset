@@ -349,6 +349,10 @@ class Dataset:
                             )
                         else:
                             path = base_path / component / f"{attribute}.parquet"
+                        # The recorder only writes attributes that were
+                        # actually recorded.
+                        if not path.exists():
+                            continue
                         attributes.append(
                             {
                                 "key": key,
@@ -361,13 +365,18 @@ class Dataset:
             else:
                 for attribute in embodiment.attributes:
                     key = f"{name}/{attribute}"
+                    path = base_path / f"{attribute}.parquet"
+                    # The recorder only writes attributes that were
+                    # actually recorded.
+                    if not path.exists():
+                        continue
                     attributes.append(
                         {
                             "key": key,
                             "embodiment": embodiment,
                             "component": None,
                             "name": attribute,
-                            "path": base_path / f"{attribute}.parquet",
+                            "path": path,
                         }
                     )
         return attributes

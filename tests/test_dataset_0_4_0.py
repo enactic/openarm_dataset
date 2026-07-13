@@ -158,6 +158,27 @@ def test_write_raises_on_multiple_legacy_attributes_per_component(
         dataset.write(tmp_path / "out")
 
 
+def test_missing_embodiment_files_are_skipped(tmp_path):
+    # The recorder declares the lifter in metadata.yaml but only writes
+    # elevation.parquet when elevation was actually recorded.
+    root = tmp_path / "no_lifter"
+    shutil.copytree(DATASET_DIR, root)
+    for episode_id in ("0", "3"):
+        for type_ in ("obs", "action"):
+            shutil.rmtree(root / "episodes" / episode_id / type_ / "lifter")
+    no_lifter = Dataset(root)
+    obs = no_lifter.load_obs(no_lifter.meta.episodes[0])
+    assert set(obs) == ARM_OBS_KEYS
+    action = no_lifter.load_action(no_lifter.meta.episodes[0])
+    assert set(action) == ARM_ACTION_KEYS
+    output = tmp_path / "out"
+    no_lifter.write(output)
+    assert not (output / "episodes" / "0" / "obs" / "lifter").exists()
+    assert (
+        output / "episodes" / "0" / "action" / "arms" / "left" / "state.parquet"
+    ).exists()
+
+
 def test_load_recorder_output_stamped_0_3_0(tmp_path):
     import yaml
 
