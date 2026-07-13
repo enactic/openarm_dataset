@@ -44,6 +44,21 @@ timestamp
 (90, 8)
 ```
 
+The available keys reflect what was actually recorded: arm data may contain any
+of `qpos`/`qvel`/`qtorque`/`pose`, and embodiments whose files were not
+recorded (e.g. a declared but unused lifter) are simply absent. Datasets
+recorded with Cartesian teleoperation expose an 8-dim `pose` action
+(position + quaternion + gripper) instead of `qpos`:
+
+```python
+>>> dataset = openarm_dataset.Dataset("tests/fixture/dataset_0.4.0_pose")
+>>> action = dataset.load_action(0)
+>>> list(action.keys())
+['arms/right/pose', 'arms/left/pose', 'lifter/elevation']
+>>> list(action["arms/right/pose"].columns)
+['x', 'y', 'z', 'qw', 'qx', 'qy', 'qz', 'gripper']
+```
+
 Camera:
 
 ```python
@@ -94,6 +109,29 @@ array([ 0.03098021,  0.991799  , -0.16657865,  0.96951085,  0.01440866,
 {'wrist_left': (600, 960, 3), 'wrist_right': (600, 960, 3), 'ceiling': (600, 960, 3), 'head': (600, 960, 3)}
 ```
 
+## Dataset format (v0.4.0)
+
+The current on-disk format written by `Dataset.write()` (and by the
+`dora-openarm-dataset-recorder`):
+
+```
+<root>/
+  metadata.yaml                      # version: "0.4.0"
+  episodes/<id>/
+    obs/arms/<side>/state.parquet    # timestamp + any of qpos/qvel/qtorque/pose
+    action/arms/<side>/state.parquet # timestamp + qpos or pose
+    obs/lifter/elevation.parquet     # timestamp + value (only if recorded)
+    action/lifter/elevation.parquet  # timestamp + value (only if recorded)
+    cameras/<name>/<timestamp>.jpeg  # or cameras/<name>.tar
+```
+
+`state.parquet` is self-describing: its non-timestamp columns (each a list of
+floats per frame) define the available attributes. `qpos`/`qvel`/`qtorque`
+have one entry per joint; `pose` is 8-dim
+(`x, y, z, qw, qx, qy, qz, gripper`). Older formats (0.1.0–0.3.0 and
+unversioned) are still read transparently, and `Dataset.write()` always
+produces v0.4.0.
+
 ## Command-line tools
 
 Validate a dataset:
@@ -112,7 +150,7 @@ openarm-dataset-repair <input> \
 ```
 
 Fills isolated single-frame gaps (a `null` or `NaN` in a `qpos`/`qvel`/
-`qtorque`/`value` array) by averaging the immediately preceding and following
+`qtorque`/`pose`/`value` array) by averaging the immediately preceding and following
 frame values, per array element. Gaps spanning two or more consecutive frames,
 and gaps at the first or last frame, cannot be averaged and are left untouched
 with a warning on stderr. The command always exits with status `0`; run
@@ -134,7 +172,7 @@ Convert a dataset:
 
 ```bash
 openarm-dataset-convert <input> <output> \
-    [--format {openarm,lerobot_v2.1,gr00t}] \
+    [--format {openarm,lerobot_v2.1,lerobot_v3.0,gr00t}] \
     [--camera-format {dir,tar}] # default dir (openarm only); tar packs each \
                                 # camera into one .tar archive \
     [--fps INT]                # default 30 (lerobot/gr00t only) \

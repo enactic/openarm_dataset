@@ -176,7 +176,9 @@ class Dataset:
             cutoff: If not None, smoothing is applied using this value.
 
         Returns:
-            Dictionary mapping names to DataFrames.
+            Dictionary mapping names to DataFrames. Keys reflect the
+            attributes actually recorded (any of qpos/qvel/qtorque/pose
+            per arm component).
 
         Example:
             {
@@ -207,7 +209,9 @@ class Dataset:
             cutoff: If not None, smoothing is applied using this value.
 
         Returns:
-            Dictionary mapping names to DataFrames.
+            Dictionary mapping names to DataFrames. Keys reflect the
+            attributes actually recorded (qpos for joint-space actions,
+            pose for Cartesian actions).
 
         Example:
             {

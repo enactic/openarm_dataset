@@ -15,9 +15,9 @@
 """Repair OpenArm dataset.
 
 Fill isolated single-frame gaps (a ``null`` or ``NaN`` in a ``qpos``/``qvel``/
-``qtorque``/``value`` array) by averaging the immediately preceding and
-following frame values. Gaps spanning two or more consecutive frames, and gaps
-at the first or last frame, cannot be averaged and are left untouched.
+``qtorque``/``pose``/``value`` array) by averaging the immediately preceding
+and following frame values. Gaps spanning two or more consecutive frames, and
+gaps at the first or last frame, cannot be averaged and are left untouched.
 """
 
 import argparse
