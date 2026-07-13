@@ -17,7 +17,7 @@ import pytest
 
 from openarm_dataset.dataset import Dataset
 
-DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.2.0"
+DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.1.0"
 
 JOINT_COLUMNS = [
     "joint1",
@@ -40,7 +40,7 @@ def dataset(tmp_path):
 
 
 def test_metadata_version(dataset):
-    assert dataset.meta.version == "0.3.0"
+    assert dataset.meta.version == "0.4.0"
 
 
 def test_num_episodes(dataset):

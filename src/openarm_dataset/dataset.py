@@ -505,9 +505,22 @@ class Dataset:
                     written_state_paths.add(new_path)
                     continue
                 if component:
-                    new_path = base_path / component / f"{name}.parquet"
-                else:
-                    new_path = base_path / f"{name}.parquet"
+                    # 0.4.0 stores component data as self-describing
+                    # state.parquet.
+                    new_path = base_path / component / "state.parquet"
+                    if new_path in written_state_paths:
+                        continue
+                    new_path.parent.mkdir(parents=True, exist_ok=True)
+                    df = pd.read_parquet(attribute["path"])
+                    # No version and 0.1.0 use "positions"
+                    if "positions" in df:
+                        df["value"] = df["positions"]
+                        df = df.drop(columns=["positions"])
+                    df = df.rename(columns={"value": name})
+                    df.to_parquet(new_path)
+                    written_state_paths.add(new_path)
+                    continue
+                new_path = base_path / f"{name}.parquet"
                 new_path.parent.mkdir(parents=True, exist_ok=True)
                 df = pd.read_parquet(attribute["path"])
                 # No version and 0.1.0 use "positions"

@@ -23,11 +23,22 @@ from openarm_dataset.dataset import Dataset
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0"
 
 ARM_JOINT_COLUMNS = [
-    "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7", "gripper",
+    "joint1",
+    "joint2",
+    "joint3",
+    "joint4",
+    "joint5",
+    "joint6",
+    "joint7",
+    "gripper",
 ]
 ARM_OBS_KEYS = {
-    "arms/left/qpos", "arms/left/qvel", "arms/left/qtorque",
-    "arms/right/qpos", "arms/right/qvel", "arms/right/qtorque",
+    "arms/left/qpos",
+    "arms/left/qvel",
+    "arms/left/qtorque",
+    "arms/right/qpos",
+    "arms/right/qvel",
+    "arms/right/qtorque",
 }
 ARM_ACTION_KEYS = {"arms/left/qpos", "arms/right/qpos"}
 
@@ -61,7 +72,11 @@ def test_load_action(dataset):
 
 def test_cameras(dataset):
     assert set(dataset.camera_names) == {
-        "ceiling", "head_left", "head_right", "wrist_left", "wrist_right",
+        "ceiling",
+        "head_left",
+        "head_right",
+        "wrist_left",
+        "wrist_right",
     }
     cameras = dataset.load_cameras(dataset.meta.episodes[0])
     assert cameras["head_left"].num_frames > 0
@@ -80,8 +95,7 @@ def test_obs_columns_optional(dataset, tmp_path):
     for episode_id in ("0", "3"):
         for side in ("left", "right"):
             path = (
-                root / "episodes" / episode_id / "obs" / "arms" / side
-                / "state.parquet"
+                root / "episodes" / episode_id / "obs" / "arms" / side / "state.parquet"
             )
             pd.read_parquet(path)[["timestamp", "qpos"]].to_parquet(path)
     minimal = Dataset(root)
@@ -101,6 +115,18 @@ def test_unknown_state_column_raises(dataset, tmp_path):
         bad.load_obs(bad.meta.episodes[0])
 
 
+def test_write_round_trip(dataset, tmp_path):
+    import yaml
+
+    output = tmp_path / "out"
+    dataset.write(output)
+    meta = yaml.safe_load((output / "metadata.yaml").read_text())
+    assert meta["version"] == "0.4.0"
+    rewritten = Dataset(output)
+    action = rewritten.load_action(rewritten.meta.episodes[0])
+    assert set(action) == ARM_ACTION_KEYS | {"lifter/elevation"}
+
+
 def test_load_recorder_output_stamped_0_3_0(tmp_path):
     import yaml
 
@@ -109,7 +135,19 @@ def test_load_recorder_output_stamped_0_3_0(tmp_path):
     meta_path = root / "metadata.yaml"
     meta = yaml.safe_load(meta_path.read_text())
     meta["version"] = "0.3.0"
+    meta["equipment"]["leader"] = {
+        "ker": {
+            "id": "OpenArmKER",
+            "firmware_version": "1.0.0",
+            "hardware_version": "1.0.0",
+        }
+    }
     meta_path.write_text(yaml.safe_dump(meta))
     recorded = Dataset(root)
     action = recorded.load_action(recorded.meta.episodes[0])
     assert "arms/left/qpos" in action
+    output = tmp_path / "out"
+    recorded.write(output)
+    written = yaml.safe_load((output / "metadata.yaml").read_text())
+    assert written["version"] == "0.4.0"
+    assert written["equipment"]["leader"]["ker"]["id"] == "OpenArmKER"

@@ -120,45 +120,35 @@ def test_sample(dataset):
     assert samples[0].action["lifter/elevation"].shape == (1,)
 
 
-def test_write_preserves_state_parquet(dataset, tmp_path):
+def test_write_converts_to_0_4_0(dataset, tmp_path):
+    import pandas as pd
+    import yaml
+
     output = tmp_path / "out"
     dataset.write(output)
+    meta = yaml.safe_load((output / "metadata.yaml").read_text())
+    assert meta["version"] == "0.4.0"
     for episode_id in ("0", "3"):
-        for side in ("left", "right"):
-            assert (
-                output
-                / "episodes"
-                / episode_id
-                / "obs"
-                / "arms"
-                / side
-                / "state.parquet"
-            ).exists()
-            assert not (
-                output
-                / "episodes"
-                / episode_id
-                / "obs"
-                / "arms"
-                / side
-                / "qpos.parquet"
-            ).exists()
-            assert (
-                output
-                / "episodes"
-                / episode_id
-                / "action"
-                / "arms"
-                / side
-                / "qpos.parquet"
-            ).exists()
-        assert (
-            output / "episodes" / episode_id / "obs" / "lifter" / "elevation.parquet"
-        ).exists()
+        for type_ in ("obs", "action"):
+            for side in ("left", "right"):
+                arm_dir = output / "episodes" / episode_id / type_ / "arms" / side
+                assert (arm_dir / "state.parquet").exists()
+                assert not (arm_dir / "qpos.parquet").exists()
+        action_df = pd.read_parquet(
+            output
+            / "episodes"
+            / episode_id
+            / "action"
+            / "arms"
+            / "left"
+            / "state.parquet"
+        )
+        assert list(action_df.columns) == ["timestamp", "qpos"]
         assert (
             output / "episodes" / episode_id / "action" / "lifter" / "elevation.parquet"
         ).exists()
     rewritten = Dataset(output)
     obs = rewritten.load_obs(rewritten.meta.episodes[0])
     assert set(obs) == ARM_OBS_KEYS | {"lifter/elevation"}
-    assert list(obs["lifter/elevation"].columns) == LIFTER_JOINT_COLUMNS
+    action = rewritten.load_action(rewritten.meta.episodes[0])
+    assert set(action) == ARM_ACTION_KEYS | {"lifter/elevation"}
