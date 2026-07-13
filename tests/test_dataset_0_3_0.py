@@ -124,6 +124,9 @@ def test_write_converts_to_0_4_0(dataset, tmp_path):
     import pandas as pd
     import yaml
 
+    original_action = dataset.load_action(dataset.meta.episodes[0])
+    original_row = original_action["arms/left/qpos"].iloc[0].to_numpy()
+
     output = tmp_path / "out"
     dataset.write(output)
     meta = yaml.safe_load((output / "metadata.yaml").read_text())
@@ -152,3 +155,4 @@ def test_write_converts_to_0_4_0(dataset, tmp_path):
     assert set(obs) == ARM_OBS_KEYS | {"lifter/elevation"}
     action = rewritten.load_action(rewritten.meta.episodes[0])
     assert set(action) == ARM_ACTION_KEYS | {"lifter/elevation"}
+    assert action["arms/left/qpos"].iloc[0].to_numpy() == pytest.approx(original_row)

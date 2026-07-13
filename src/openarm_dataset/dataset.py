@@ -506,10 +506,19 @@ class Dataset:
                     continue
                 if component:
                     # 0.4.0 stores component data as self-describing
-                    # state.parquet.
+                    # state.parquet. Legacy per-attribute sources are
+                    # assumed to have exactly one attribute per component
+                    # (currently only "qpos"); a second attribute would
+                    # collide on the same state.parquet and silently lose
+                    # data, so fail loudly instead of merging columns.
                     new_path = base_path / component / "state.parquet"
                     if new_path in written_state_paths:
-                        continue
+                        raise ValueError(
+                            f"Cannot convert multiple attributes for component "
+                            f"{component!r} into a single {new_path}: attribute "
+                            f"{name!r} would overwrite data already written for "
+                            f"this component."
+                        )
                     new_path.parent.mkdir(parents=True, exist_ok=True)
                     df = pd.read_parquet(attribute["path"])
                     # No version and 0.1.0 use "positions"

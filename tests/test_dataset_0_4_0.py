@@ -127,6 +127,37 @@ def test_write_round_trip(dataset, tmp_path):
     assert set(action) == ARM_ACTION_KEYS | {"lifter/elevation"}
 
 
+def test_write_raises_on_multiple_legacy_attributes_per_component(
+    tmp_path, monkeypatch
+):
+    # OpenArm.attributes is currently always ("qpos",), so a component never
+    # has more than one legacy per-attribute source file in practice. This
+    # test forces a second attribute ("qvel") to confirm the writer fails
+    # loudly instead of silently dropping data when that invariant breaks.
+    from openarm_dataset.metadata import OpenArm
+
+    original_init = OpenArm.__init__
+
+    def patched_init(self, name, data):
+        original_init(self, name, data)
+        self.attributes = ("qpos", "qvel")
+
+    monkeypatch.setattr(OpenArm, "__init__", patched_init)
+
+    fixture_dir = Path(__file__).parent / "fixture" / "dataset_0.2.0"
+    root = tmp_path / "dataset_0.2.0"
+    shutil.copytree(fixture_dir, root)
+    for episode_id in ("0", "3"):
+        for type_ in ("obs", "action"):
+            for side in ("left", "right"):
+                arm_dir = root / "episodes" / episode_id / type_ / "arms" / side
+                shutil.copy2(arm_dir / "qpos.parquet", arm_dir / "qvel.parquet")
+
+    dataset = Dataset(root)
+    with pytest.raises(ValueError, match="state.parquet"):
+        dataset.write(tmp_path / "out")
+
+
 def test_load_recorder_output_stamped_0_3_0(tmp_path):
     import yaml
 
