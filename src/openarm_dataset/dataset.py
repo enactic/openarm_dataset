@@ -28,6 +28,9 @@ from .camera import Camera
 from .metadata import Metadata
 from .sampler import Sampler, Sample
 
+# Attributes that may appear as columns in a state.parquet file.
+STATE_ATTRIBUTES = ("qpos", "qvel", "qtorque", "pose")
+
 
 class Dataset:
     """OpenArm Dataset."""
@@ -317,7 +320,15 @@ class Dataset:
                 for component in embodiment.components:
                     state_path = base_path / component / "state.parquet"
                     if state_path.exists():
-                        for attr_name in ("qpos", "qvel", "qtorque"):
+                        # state.parquet is self-describing: one list column
+                        # per attribute.
+                        for attr_name in pq.read_schema(state_path).names:
+                            if attr_name == "timestamp":
+                                continue
+                            if attr_name not in STATE_ATTRIBUTES:
+                                raise ValueError(
+                                    f"Unknown attribute {attr_name!r} in {state_path}"
+                                )
                             attributes.append(
                                 {
                                     "key": f"{name}/{component}/{attr_name}",
@@ -385,9 +396,8 @@ class Dataset:
     ) -> pd.DataFrame:
         df = pd.read_parquet(attribute["path"])
         if attribute["path"].name == "state.parquet":
-            # 0.3.0 uses state.parquet with qpos/qvel/qtorque columns.
             column_name = attribute["name"]
-            drop_columns = [c for c in ("qpos", "qvel", "qtorque") if c in df.columns]
+            drop_columns = [c for c in df.columns if c != "timestamp"]
         elif "positions" in df:
             # No version and 0.1.0 use "positions"
             column_name = "positions"
@@ -395,7 +405,8 @@ class Dataset:
         else:
             column_name = "value"
             drop_columns = ["value"]
-        df[list(attribute["embodiment"].joints)] = pd.DataFrame(
+        dims = attribute["embodiment"].dims(attribute["name"])
+        df[list(dims)] = pd.DataFrame(
             df[column_name].tolist(),
             index=df.index,
         )

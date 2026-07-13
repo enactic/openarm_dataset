@@ -197,6 +197,18 @@ class Perceptions:
         }
 
 
+POSE_DIMS = (
+    "x",
+    "y",
+    "z",
+    "qw",
+    "qx",
+    "qy",
+    "qz",
+    "gripper",
+)
+
+
 class Embodiment:
     """Metadata for embodiment."""
 
@@ -217,6 +229,12 @@ class Embodiment:
     def version(self) -> str:
         """Get version."""
         return self._data["version"]
+
+    def dims(self, attribute: str) -> tuple[str, ...]:
+        """Return per-dimension names for the given attribute."""
+        if attribute == "pose":
+            return POSE_DIMS
+        return self.joints
 
 
 class OpenArm(Embodiment):
