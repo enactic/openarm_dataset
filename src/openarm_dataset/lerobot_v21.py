@@ -58,62 +58,26 @@ def _get_joint_names(component, joints):
     return [f"{component}_{joint}.pos" for joint in joints]
 
 
-def _select_attribute(embodiment, present, type_):
-    if not embodiment.components:
-        # Component-less embodiments (e.g. lifter) have a single attribute.
-        return embodiment.attributes[0]
-    if type_ == "obs":
-        if "qpos" not in present:
-            raise ValueError(
-                f"obs for {embodiment.name!r} has no qpos: {sorted(present)}"
-            )
-        return "qpos"
-    candidates = [a for a in ("qpos", "pose") if a in present]
-    if len(candidates) > 1:
-        raise ValueError(
-            f"Ambiguous action attributes for {embodiment.name!r}: {candidates}"
-        )
-    if not candidates:
-        raise ValueError(
-            f"action for {embodiment.name!r} has no qpos or pose: {sorted(present)}"
-        )
-    return candidates[0]
-
-
-def _episode_vector_spec(dataset: Dataset, type_: str, episode: dict):
-    groups = {}
-    for attribute in dataset.get_embodiment_attributes(type_, episode):
-        group = (attribute["embodiment"].name, attribute["component"])
-        groups.setdefault(group, []).append(attribute)
+def _collect_keys_and_joint_names(dataset: Dataset):
     keys = []
-    names = []
-    for (name, component), attributes in groups.items():
-        embodiment = attributes[0]["embodiment"]
-        selected = _select_attribute(embodiment, {a["name"] for a in attributes}, type_)
-        if component:
-            keys.append(f"{name}/{component}/{selected}")
+    joint_names = []
+    for name, embodiment in dataset.meta.equipment.embodiments.items():
+        if embodiment.components:
+            for component in embodiment.components:
+                for attribute in embodiment.attributes:
+                    key = f"{name}/{component}/{attribute}"
+                    keys.append(key)
+                    joint_names.extend(_get_joint_names(component, embodiment.joints))
         else:
-            keys.append(f"{name}/{selected}")
-        names.extend(_get_joint_names(component, embodiment.dims(selected)))
-    return keys, names
-
-
-def _collect_vector_spec(dataset: Dataset, type_: str):
-    """Collect (keys, names) of the concatenated obs or action vector."""
-    episodes = dataset.meta.episodes
-    keys, names = _episode_vector_spec(dataset, type_, episodes[0])
-    for episode in episodes[1:]:
-        other_keys, _ = _episode_vector_spec(dataset, type_, episode)
-        if other_keys != keys:
-            raise ValueError(
-                f"Episode {episode['id']} has inconsistent {type_} keys: "
-                f"{other_keys} != {keys}"
-            )
-    return keys, names
+            for attribute in embodiment.attributes:
+                key = f"{name}/{attribute}"
+                keys.append(key)
+                joint_names.extend(_get_joint_names(None, embodiment.joints))
+    return keys, joint_names
 
 
 def _collect_downsampled_data(
-    dataset: Dataset, fps: int, obs_keys, action_keys, success_only=False
+    dataset: Dataset, fps: int, joint_keys, success_only=False
 ):
     records = []
     for episode_index, episode in enumerate(dataset.meta.episodes):
@@ -122,13 +86,11 @@ def _collect_downsampled_data(
         samples = dataset.sample(hz=fps, episode=episode)
         num_frames = len(samples)
         sampled_obs = [
-            np.concatenate([s.obs[k] for k in obs_keys], axis=0).astype(np.float32)
+            np.concatenate([s.obs[k] for k in joint_keys], axis=0).astype(np.float32)
             for s in samples
         ]
         sampled_actions = [
-            np.concatenate([s.action[k] for k in action_keys], axis=0).astype(
-                np.float32
-            )
+            np.concatenate([s.action[k] for k in joint_keys], axis=0).astype(np.float32)
             for s in samples
         ]
         sampled_cameras = {
@@ -381,8 +343,7 @@ def _write_metadata(
     output_dir,
     fps,
     train_split,
-    obs_names,
-    action_names,
+    joint_names,
     remap_episode_index,
     remap_task_index,
 ):
@@ -483,12 +444,12 @@ def _write_metadata(
     all_actions = (
         np.vstack(all_actions)
         if all_actions
-        else np.empty((0, len(action_names)), dtype=np.float32)
+        else np.empty((0, len(joint_names)), dtype=np.float32)
     )
     all_observations = (
         np.vstack(all_observations)
         if all_observations
-        else np.empty((0, len(obs_names)), dtype=np.float32)
+        else np.empty((0, len(joint_names)), dtype=np.float32)
     )
     timestamp_all = (
         np.concatenate(timestamp_all)
@@ -542,13 +503,13 @@ def _write_metadata(
     features = {
         "action": {
             "dtype": "float32",
-            "names": action_names,
-            "shape": [len(action_names)],
+            "names": joint_names,
+            "shape": [len(joint_names)],
         },
         "observation.state": {
             "dtype": "float32",
-            "names": obs_names,
-            "shape": [len(obs_names)],
+            "names": joint_names,
+            "shape": [len(joint_names)],
         },
         "timestamp": {"dtype": "float64", "shape": [1], "names": None},
         "frame_index": {"dtype": "int64", "shape": [1], "names": None},
@@ -603,55 +564,52 @@ def _write_metadata(
         json.dump(info, f, ensure_ascii=False, indent=4)
 
 
-def _collect_modality_ranges(dataset: Dataset, keys: list[str]):
-    """Build named GR00T modality slices into a concatenated vector.
+def _collect_modality_ranges(dataset: Dataset):
+    """Build named GR00T modality slices into the concatenated state/action vectors.
 
-    Follows the vector spec key order so the ranges always match the parquet
-    layout. A trailing "gripper" dim is split into its own entry, following
-    GR00T conventions.
+    Follows the same iteration order as _collect_keys_and_joint_names so the
+    ranges always match the parquet layout. A trailing "gripper" joint is
+    split into its own entry, following GR00T conventions.
     """
     ranges = {}
     offset = 0
-    for key in keys:
-        parts = key.split("/")
-        name = parts[0]
-        component = parts[1] if len(parts) == 3 else None
-        attribute = parts[-1]
-        embodiment = dataset.meta.equipment.embodiments[name]
+    for name, embodiment in dataset.meta.equipment.embodiments.items():
         # naive singular: "arms" -> "arm"; embodiment set is closed (see metadata.py)
         base = name.removesuffix("s")
-        prefix = f"{component}_" if component else ""
-        range_key = f"{prefix}{base}"
-        if range_key in ranges:
-            raise NotImplementedError(
-                f"modality.json does not support multi-attribute embodiment {name!r}"
-            )
-        dims = embodiment.dims(attribute)
-        if dims[-1] == "gripper":
-            ranges[range_key] = {
-                "start": offset,
-                "end": offset + len(dims) - 1,
-            }
-            ranges[f"{prefix}gripper"] = {
-                "start": offset + len(dims) - 1,
-                "end": offset + len(dims),
-            }
-        else:
-            ranges[range_key] = {
-                "start": offset,
-                "end": offset + len(dims),
-            }
-        offset += len(dims)
+        components = embodiment.components if embodiment.components else (None,)
+        for component in components:
+            prefix = f"{component}_" if component else ""
+            for _attribute in embodiment.attributes:
+                key = f"{prefix}{base}"
+                if key in ranges:
+                    raise NotImplementedError(
+                        f"modality.json does not support multi-attribute embodiment {name!r}"
+                    )
+                joints = embodiment.joints
+                if joints[-1] == "gripper":
+                    ranges[key] = {
+                        "start": offset,
+                        "end": offset + len(joints) - 1,
+                    }
+                    ranges[f"{prefix}gripper"] = {
+                        "start": offset + len(joints) - 1,
+                        "end": offset + len(joints),
+                    }
+                else:
+                    ranges[key] = {
+                        "start": offset,
+                        "end": offset + len(joints),
+                    }
+                offset += len(joints)
     return ranges
 
 
 def _write_modality_json(dataset: Dataset, output_dir: Path):
     """Write GR00T meta/modality.json describing the dataset layout."""
-    obs_keys, _ = _collect_vector_spec(dataset, "obs")
-    action_keys, _ = _collect_vector_spec(dataset, "action")
+    ranges = _collect_modality_ranges(dataset)
     modality = {
-        "state": _collect_modality_ranges(dataset, obs_keys),
-        "action": _collect_modality_ranges(dataset, action_keys),
+        "state": ranges,
+        "action": ranges,
         "video": {
             camera_name: {"original_key": _get_image_name_from_key(camera_name)}
             for camera_name in dataset.camera_names
@@ -686,14 +644,11 @@ def to_lerobotv21(
     # Create the output directories
     output_dir = Path(output_dir)
 
-    # Collect obs/action vector keys and dim names
-    obs_keys, obs_names = _collect_vector_spec(dataset, "obs")
-    action_keys, action_names = _collect_vector_spec(dataset, "action")
+    # Collect joint keys and names
+    joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
 
     # collect downsampled data for each episode
-    records = _collect_downsampled_data(
-        dataset, fps, obs_keys, action_keys, success_only
-    )
+    records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
 
     if not records:
         raise ValueError("No episodes to write.")
@@ -714,8 +669,7 @@ def to_lerobotv21(
         output_dir,
         fps,
         train_split,
-        obs_names,
-        action_names,
+        joint_names,
         remap_episode_index,
         remap_task_index,
     )

@@ -29,7 +29,7 @@ from .lerobot_v21 import (
     VIDEO_CODEC,
     VIDEO_PIX_FMT,
     _collect_downsampled_data,
-    _collect_vector_spec,
+    _collect_keys_and_joint_names,
     _build_remaps,
     _describe_images,
     _describe_scalar,
@@ -469,8 +469,7 @@ def _write_info_json(
     output_dir,
     fps,
     train_split,
-    obs_names,
-    action_names,
+    joint_names,
     total_frames,
     remap_task_index,
 ):
@@ -478,14 +477,14 @@ def _write_info_json(
     features = {
         "action": {
             "dtype": "float32",
-            "names": action_names,
-            "shape": [len(action_names)],
+            "names": joint_names,
+            "shape": [len(joint_names)],
             "fps": fps,
         },
         "observation.state": {
             "dtype": "float32",
-            "names": obs_names,
-            "shape": [len(obs_names)],
+            "names": joint_names,
+            "shape": [len(joint_names)],
             "fps": fps,
         },
         "timestamp": {"dtype": "float64", "shape": [1], "names": None, "fps": fps},
@@ -577,11 +576,8 @@ def to_lerobotv30(
     dataset.set_smoothing(cutoff=smoothing_cutoff)
     output_dir = Path(output_dir)
 
-    obs_keys, obs_names = _collect_vector_spec(dataset, "obs")
-    action_keys, action_names = _collect_vector_spec(dataset, "action")
-    records = _collect_downsampled_data(
-        dataset, fps, obs_keys, action_keys, success_only
-    )
+    joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
+    records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
 
     if not records:
         raise ValueError("No episodes to write.")
@@ -613,8 +609,7 @@ def to_lerobotv30(
         output_dir,
         fps,
         train_split,
-        obs_names,
-        action_names,
+        joint_names,
         total_frames,
         remap_task_index,
     )
