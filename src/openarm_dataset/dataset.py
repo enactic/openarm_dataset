@@ -72,7 +72,7 @@ class Dataset:
             ``True`` if the dataset is valid, ``False`` otherwise.
 
         """
-        valid = True
+        valid = self._validate_attributes(on_error)
         checked_paths = set()
         for episode in self.meta.episodes:
             for type_name in ("obs", "action"):
@@ -120,6 +120,41 @@ class Dataset:
                                 "includes null values"
                             )
                         valid = False
+        return valid
+
+    def _validate_attributes(self, on_error=None) -> bool:
+        """Check metadata attributes against recorded parquet contents."""
+        declared = self.meta.attributes
+        if not declared:
+            return True
+        valid = True
+        for type_name in ("obs", "action"):
+            actual: dict[tuple[str, str], set[str]] = {}
+            for episode in self.meta.episodes:
+                for attribute in self.get_embodiment_attributes(type_name, episode):
+                    # attributes metadata only covers embodiments with
+                    # components (the recorder writes it from state.parquet).
+                    if attribute["component"] is None:
+                        continue
+                    key = (attribute["embodiment"].name, attribute["component"])
+                    actual.setdefault(key, set()).add(attribute["name"])
+            declared_sets = {
+                (embodiment_name, component): set(names)
+                for embodiment_name, components in declared.get(type_name, {}).items()
+                for component, names in components.items()
+            }
+            for key in sorted(set(declared_sets) | set(actual)):
+                declared_names = declared_sets.get(key, set())
+                actual_names = actual.get(key, set())
+                if declared_names == actual_names:
+                    continue
+                if on_error is not None:
+                    on_error(
+                        f"attributes mismatch for {type_name} {key[0]}/{key[1]}: "
+                        f"metadata declares {sorted(declared_names)}, "
+                        f"episodes contain {sorted(actual_names)}"
+                    )
+                valid = False
         return valid
 
     @property
