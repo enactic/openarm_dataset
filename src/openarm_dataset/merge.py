@@ -81,6 +81,7 @@ def _validate_compatibility(datasets: list[Dataset]) -> None:
 
     ref_equipment = ref.meta.data["equipment"]
     ref_frequencies = ref.meta.data.get("frequencies", {})
+    ref_attributes = ref.meta.attributes
 
     for i, ds in enumerate(datasets[1:], 1):
         if ds.meta.version != ref_version:
@@ -97,6 +98,11 @@ def _validate_compatibility(datasets: list[Dataset]) -> None:
         if ds.meta.data.get("frequencies", {}) != ref_frequencies:
             raise MergeError(
                 f"Dataset {i}: frequencies configuration differs from dataset 0"
+            )
+
+        if ds.meta.attributes != ref_attributes:
+            raise MergeError(
+                f"Dataset {i}: attributes configuration differs from dataset 0"
             )
 
 

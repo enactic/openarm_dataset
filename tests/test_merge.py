@@ -223,3 +223,49 @@ def test_merged_dataset_is_loadable(dataset_a, dataset_b, tmp_path):
     assert ds.meta.version == "0.3.0"
     obs = ds.load_obs(ds.meta.episodes[0])
     assert len(obs) > 0
+
+
+ATTRIBUTES = {
+    "action": {"arms": {"left": ["qpos"], "right": ["qpos"]}},
+    "obs": {"arms": {"left": ["qpos"], "right": ["qpos"]}},
+}
+
+
+def test_merge_incompatible_attributes(dataset_a, dataset_b, tmp_path):
+    meta = _load_meta(dataset_a)
+    meta["attributes"] = ATTRIBUTES
+    with open(dataset_a / "metadata.yaml", "w") as f:
+        yaml.safe_dump(meta, f)
+    meta = _load_meta(dataset_b)
+    meta["attributes"] = {
+        "action": {"arms": {"left": ["pose"], "right": ["pose"]}},
+        "obs": {"arms": {"left": ["qpos"], "right": ["qpos"]}},
+    }
+    with open(dataset_b / "metadata.yaml", "w") as f:
+        yaml.safe_dump(meta, f)
+
+    with pytest.raises(MergeError, match="attributes.*differs"):
+        merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
+
+
+def test_merge_one_sided_attributes(dataset_a, dataset_b, tmp_path):
+    meta = _load_meta(dataset_b)
+    meta["attributes"] = ATTRIBUTES
+    with open(dataset_b / "metadata.yaml", "w") as f:
+        yaml.safe_dump(meta, f)
+
+    with pytest.raises(MergeError, match="attributes.*differs"):
+        merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
+
+
+def test_merge_matching_attributes(dataset_a, dataset_b, tmp_path):
+    for ds in (dataset_a, dataset_b):
+        meta = _load_meta(ds)
+        meta["attributes"] = ATTRIBUTES
+        with open(ds / "metadata.yaml", "w") as f:
+            yaml.safe_dump(meta, f)
+
+    output = tmp_path / "merged"
+    merge_datasets([dataset_a, dataset_b], output)
+
+    assert _load_meta(output)["attributes"] == ATTRIBUTES
