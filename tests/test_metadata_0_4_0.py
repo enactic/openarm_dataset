@@ -33,18 +33,18 @@ ATTRIBUTES = {
 }
 
 
-def test_attributes_absent():
-    meta = Metadata(METADATA_PATH)
-    assert meta.attributes == {}
-
-
-def test_attributes_present(tmp_path):
+def test_attributes_absent(tmp_path):
     with open(METADATA_PATH) as f:
         data = yaml.safe_load(f)
-    data["attributes"] = ATTRIBUTES
+    del data["attributes"]
     path = tmp_path / "metadata.yaml"
     with open(path, "w") as f:
         yaml.safe_dump(data, f)
 
     meta = Metadata(path)
+    assert meta.attributes == {}
+
+
+def test_attributes_present():
+    meta = Metadata(METADATA_PATH)
     assert meta.attributes == ATTRIBUTES

@@ -169,12 +169,10 @@ def _write_attributes(dataset_path, attributes):
         yaml.safe_dump(meta, f)
 
 
-def test_validate_attributes_match(tmp_path):
-    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    _write_attributes(tmp_path, POSE_ATTRIBUTES)
-
+def test_validate_attributes_match():
+    # The committed fixture declares attributes matching its parquet files.
     errors = []
-    assert Dataset(tmp_path).validate(on_error=errors.append)
+    assert Dataset(POSE_DATASET_DIR).validate(on_error=errors.append)
     assert errors == []
 
 
@@ -206,7 +204,15 @@ def test_validate_attributes_order_insensitive(tmp_path):
     assert errors == []
 
 
-def test_validate_without_attributes_key_skips_check():
+def test_validate_without_attributes_key_skips_check(tmp_path):
+    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    meta_path = tmp_path / "metadata.yaml"
+    with open(meta_path) as f:
+        meta = yaml.safe_load(f)
+    del meta["attributes"]
+    with open(meta_path, "w") as f:
+        yaml.safe_dump(meta, f)
+
     errors = []
-    assert Dataset(POSE_DATASET_DIR).validate(on_error=errors.append)
+    assert Dataset(tmp_path).validate(on_error=errors.append)
     assert errors == []
