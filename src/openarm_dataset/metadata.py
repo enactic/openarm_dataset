@@ -92,6 +92,11 @@ class Metadata:
         """Get frequencies."""
         return Frequencies(self.data.get("frequencies", {}))
 
+    @property
+    def attributes(self) -> dict:
+        """Get recorded state attributes per type/embodiment/component."""
+        return self.data.get("attributes", {})
+
     def _convert_unversioned_equipment(self):
         equipment = copy.deepcopy(self.data["equipment"])
         equipment["id"] = equipment.pop("equipment_id")
