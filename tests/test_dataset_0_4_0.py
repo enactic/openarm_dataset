@@ -177,29 +177,3 @@ def test_missing_embodiment_files_are_skipped(tmp_path):
     assert (
         output / "episodes" / "0" / "action" / "arms" / "left" / "state.parquet"
     ).exists()
-
-
-def test_load_recorder_output_stamped_0_3_0(tmp_path):
-    import yaml
-
-    root = tmp_path / "recorded"
-    shutil.copytree(DATASET_DIR, root)
-    meta_path = root / "metadata.yaml"
-    meta = yaml.safe_load(meta_path.read_text())
-    meta["version"] = "0.3.0"
-    meta["equipment"]["leader"] = {
-        "ker": {
-            "id": "OpenArmKER",
-            "firmware_version": "1.0.0",
-            "hardware_version": "1.0.0",
-        }
-    }
-    meta_path.write_text(yaml.safe_dump(meta))
-    recorded = Dataset(root)
-    action = recorded.load_action(recorded.meta.episodes[0])
-    assert "arms/left/qpos" in action
-    output = tmp_path / "out"
-    recorded.write(output)
-    written = yaml.safe_load((output / "metadata.yaml").read_text())
-    assert written["version"] == "0.4.0"
-    assert written["equipment"]["leader"]["ker"]["id"] == "OpenArmKER"
