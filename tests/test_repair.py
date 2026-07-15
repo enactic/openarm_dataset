@@ -26,6 +26,7 @@ from openarm_dataset.repair import repair_dataset
 
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.3.0"
 POSE_DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"
+UNVERSIONED_DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_unversioned"
 STATE_REL = Path("episodes") / "0" / "obs" / "arms" / "left" / "state.parquet"
 POSE_STATE_REL = Path("episodes") / "0" / "action" / "arms" / "left" / "state.parquet"
 
@@ -157,6 +158,36 @@ def test_repair_output_mode_leaves_input_untouched(tmp_path):
 
     # Input is unchanged (still invalid); output is repaired.
     assert not Dataset(dataset).validate()
+    assert Dataset(output).validate()
+
+
+def test_repair_output_mode_preserves_metadata(tmp_path):
+    dataset = _copy_dataset(tmp_path)
+    output = tmp_path / "repaired"
+
+    repair_dataset(dataset, output)
+
+    # Repair only copies episode data, so the metadata (including the
+    # version) must stay as-is instead of being upgraded to the latest
+    # format.
+    assert (output / "metadata.yaml").read_text() == (
+        dataset / "metadata.yaml"
+    ).read_text()
+
+
+def test_repair_output_mode_preserves_unversioned_metadata(tmp_path):
+    dataset = tmp_path / "dataset"
+    shutil.copytree(UNVERSIONED_DATASET_DIR, dataset)
+    output = tmp_path / "repaired"
+
+    repair_dataset(dataset, output)
+
+    assert (output / "metadata.yaml").read_text() == (
+        dataset / "metadata.yaml"
+    ).read_text()
+    assert (output / "episodes.jsonl").read_text() == (
+        dataset / "episodes.jsonl"
+    ).read_text()
     assert Dataset(output).validate()
 
 
