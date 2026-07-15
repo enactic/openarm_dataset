@@ -31,6 +31,17 @@ from .sampler import Sampler, Sample
 # Attributes that may appear as columns in a state.parquet file.
 STATE_ATTRIBUTES = ("qpos", "qvel", "qtorque", "pose")
 
+POSE_JOINTS = (
+    "x",
+    "y",
+    "z",
+    "qw",
+    "qx",
+    "qy",
+    "qz",
+    "gripper",
+)
+
 
 class Dataset:
     """OpenArm Dataset."""
@@ -418,8 +429,11 @@ class Dataset:
         else:
             column_name = "value"
             drop_columns = ["value"]
-        dims = attribute["embodiment"].dims(attribute["name"])
-        df[list(dims)] = pd.DataFrame(
+        if attribute["name"] == "pose":
+            joints = POSE_JOINTS
+        else:
+            joints = attribute["embodiment"].joints
+        df[list(joints)] = pd.DataFrame(
             df[column_name].tolist(),
             index=df.index,
         )
