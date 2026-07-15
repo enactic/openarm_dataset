@@ -44,3 +44,26 @@ def test_obs_still_joint_space(dataset):
 def test_sample_pose(dataset):
     samples = dataset.sample(hz=30, episode=dataset.meta.episodes[0])
     assert samples[0].action["arms/left/pose"].shape == (8,)
+
+
+def test_get_embodiment_attributes(dataset):
+    episode = dataset.meta.episodes[0]
+    action_attributes = {
+        (a["embodiment"].name, a["component"], a["name"])
+        for a in dataset.get_embodiment_attributes("action", episode)
+    }
+    assert action_attributes == {
+        ("arms", "left", "pose"),
+        ("arms", "right", "pose"),
+        ("lifter", None, "elevation"),
+    }
+    obs_attributes = {
+        (a["component"], a["name"])
+        for a in dataset.get_embodiment_attributes("obs", episode)
+        if a["embodiment"].name == "arms"
+    }
+    assert obs_attributes == {
+        (side, name)
+        for side in ("left", "right")
+        for name in ("qpos", "qvel", "qtorque")
+    }

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import math
 import shutil
 import subprocess
@@ -20,7 +19,6 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 from openarm_dataset.dataset import Dataset
 
@@ -149,70 +147,8 @@ def test_validate_cli_invalid(tmp_path):
 
 POSE_DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"
 
-POSE_ATTRIBUTES = {
-    "action": {"arms": {"left": ["pose"], "right": ["pose"]}},
-    "obs": {
-        "arms": {
-            "left": ["qpos", "qvel", "qtorque"],
-            "right": ["qpos", "qvel", "qtorque"],
-        }
-    },
-}
 
-
-def _write_attributes(dataset_path, attributes):
-    meta_path = dataset_path / "metadata.yaml"
-    with open(meta_path) as f:
-        meta = yaml.safe_load(f)
-    meta["attributes"] = attributes
-    with open(meta_path, "w") as f:
-        yaml.safe_dump(meta, f)
-
-
-def test_validate_attributes_match():
-    # The committed fixture declares attributes matching its parquet files.
+def test_validate_pose_dataset():
     errors = []
     assert Dataset(POSE_DATASET_DIR).validate(on_error=errors.append)
-    assert errors == []
-
-
-def test_validate_attributes_mismatch(tmp_path):
-    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    attributes = copy.deepcopy(POSE_ATTRIBUTES)
-    attributes["action"]["arms"]["left"] = ["qpos"]
-    attributes["action"]["arms"]["right"] = ["qpos"]
-    _write_attributes(tmp_path, attributes)
-
-    errors = []
-    assert not Dataset(tmp_path).validate(on_error=errors.append)
-    assert errors == [
-        "attributes mismatch for action arms/left: "
-        "metadata declares ['qpos'], episodes contain ['pose']",
-        "attributes mismatch for action arms/right: "
-        "metadata declares ['qpos'], episodes contain ['pose']",
-    ]
-
-
-def test_validate_attributes_order_insensitive(tmp_path):
-    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    attributes = copy.deepcopy(POSE_ATTRIBUTES)
-    attributes["obs"]["arms"]["left"] = ["qtorque", "qpos", "qvel"]
-    _write_attributes(tmp_path, attributes)
-
-    errors = []
-    assert Dataset(tmp_path).validate(on_error=errors.append)
-    assert errors == []
-
-
-def test_validate_without_attributes_key_skips_check(tmp_path):
-    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    meta_path = tmp_path / "metadata.yaml"
-    with open(meta_path) as f:
-        meta = yaml.safe_load(f)
-    del meta["attributes"]
-    with open(meta_path, "w") as f:
-        yaml.safe_dump(meta, f)
-
-    errors = []
-    assert Dataset(tmp_path).validate(on_error=errors.append)
     assert errors == []

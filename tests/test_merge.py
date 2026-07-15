@@ -225,47 +225,26 @@ def test_merged_dataset_is_loadable(dataset_a, dataset_b, tmp_path):
     assert len(obs) > 0
 
 
-ATTRIBUTES = {
-    "action": {"arms": {"left": ["qpos"], "right": ["qpos"]}},
-    "obs": {"arms": {"left": ["qpos"], "right": ["qpos"]}},
-}
+QPOS_FIXTURE_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0"
+POSE_FIXTURE_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"
 
 
-def test_merge_incompatible_attributes(dataset_a, dataset_b, tmp_path):
-    meta = _load_meta(dataset_a)
-    meta["attributes"] = ATTRIBUTES
-    with open(dataset_a / "metadata.yaml", "w") as f:
-        yaml.safe_dump(meta, f)
-    meta = _load_meta(dataset_b)
-    meta["attributes"] = {
-        "action": {"arms": {"left": ["pose"], "right": ["pose"]}},
-        "obs": {"arms": {"left": ["qpos"], "right": ["qpos"]}},
-    }
-    with open(dataset_b / "metadata.yaml", "w") as f:
-        yaml.safe_dump(meta, f)
-
-    with pytest.raises(MergeError, match="attributes.*differs"):
-        merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
-
-
-def test_merge_one_sided_attributes(dataset_a, dataset_b, tmp_path):
-    meta = _load_meta(dataset_b)
-    meta["attributes"] = ATTRIBUTES
-    with open(dataset_b / "metadata.yaml", "w") as f:
-        yaml.safe_dump(meta, f)
-
-    with pytest.raises(MergeError, match="attributes.*differs"):
-        merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
-
-
-def test_merge_matching_attributes(dataset_a, dataset_b, tmp_path):
-    for ds in (dataset_a, dataset_b):
-        meta = _load_meta(ds)
-        meta["attributes"] = ATTRIBUTES
-        with open(ds / "metadata.yaml", "w") as f:
-            yaml.safe_dump(meta, f)
+def test_merge_mixed_qpos_and_pose_actions(tmp_path):
+    dataset_qpos = tmp_path / "dataset_qpos"
+    dataset_pose = tmp_path / "dataset_pose"
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_qpos)
+    shutil.copytree(POSE_FIXTURE_DIR, dataset_pose)
 
     output = tmp_path / "merged"
-    merge_datasets([dataset_a, dataset_b], output)
+    merge_datasets([dataset_qpos, dataset_pose], output)
 
-    assert _load_meta(output)["attributes"] == ATTRIBUTES
+    from openarm_dataset import Dataset
+
+    ds = Dataset(output)
+    assert ds.num_episodes == 4
+    qpos_action = ds.load_action(ds.meta.episodes[0])
+    assert "arms/left/qpos" in qpos_action
+    assert "arms/left/pose" not in qpos_action
+    pose_action = ds.load_action(ds.meta.episodes[2])
+    assert "arms/left/pose" in pose_action
+    assert "arms/left/qpos" not in pose_action
