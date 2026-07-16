@@ -20,7 +20,7 @@ import pytest
 
 from openarm_dataset.dataset import Dataset
 
-DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0"
+DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_qpos"
 
 ARM_JOINT_COLUMNS = [
     "joint1",

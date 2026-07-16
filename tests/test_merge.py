@@ -225,7 +225,7 @@ def test_merged_dataset_is_loadable(dataset_a, dataset_b, tmp_path):
     assert len(obs) > 0
 
 
-QPOS_FIXTURE_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0"
+QPOS_FIXTURE_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_qpos"
 POSE_FIXTURE_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"
 
 
