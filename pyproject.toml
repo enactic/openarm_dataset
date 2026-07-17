@@ -44,7 +44,7 @@ dependencies = [
 ]
 "lerobot-dataset-v3.0" = [
     # lerobot 0.5.0+ writes the v3.0 dataset format and requires Python 3.12+.
-    "lerobot == 0.5.1; python_version >= '3.12'",
+    "lerobot[dataset] >= 0.6.0; python_version >= '3.12'",
 ]
 rerun = [
     # The API differs by version; the latest API requires 0.33+.
