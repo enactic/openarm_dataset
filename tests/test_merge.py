@@ -223,3 +223,28 @@ def test_merged_dataset_is_loadable(dataset_a, dataset_b, tmp_path):
     assert ds.meta.version == "0.3.0"
     obs = ds.load_obs(ds.meta.episodes[0])
     assert len(obs) > 0
+
+
+QPOS_FIXTURE_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_qpos"
+POSE_FIXTURE_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"
+
+
+def test_merge_mixed_qpos_and_pose_actions(tmp_path):
+    dataset_qpos = tmp_path / "dataset_qpos"
+    dataset_pose = tmp_path / "dataset_pose"
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_qpos)
+    shutil.copytree(POSE_FIXTURE_DIR, dataset_pose)
+
+    output = tmp_path / "merged"
+    merge_datasets([dataset_qpos, dataset_pose], output)
+
+    from openarm_dataset import Dataset
+
+    ds = Dataset(output)
+    assert ds.num_episodes == 4
+    qpos_action = ds.load_action(ds.meta.episodes[0])
+    assert "arms/left/qpos" in qpos_action
+    assert "arms/left/pose" not in qpos_action
+    pose_action = ds.load_action(ds.meta.episodes[2])
+    assert "arms/left/pose" in pose_action
+    assert "arms/left/qpos" not in pose_action

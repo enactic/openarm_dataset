@@ -143,3 +143,12 @@ def test_validate_cli_invalid(tmp_path):
     assert result.stderr == (
         "episodes/0/obs/arms/left/state.parquet: includes null values\n"
     )
+
+
+POSE_DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"
+
+
+def test_validate_pose_dataset():
+    errors = []
+    assert Dataset(POSE_DATASET_DIR).validate(on_error=errors.append)
+    assert errors == []

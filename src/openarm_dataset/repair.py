@@ -15,9 +15,9 @@
 """Repair OpenArm dataset.
 
 Fill isolated single-frame gaps (a ``null`` or ``NaN`` in a ``qpos``/``qvel``/
-``qtorque``/``value`` array) by averaging the immediately preceding and
-following frame values. Gaps spanning two or more consecutive frames, and gaps
-at the first or last frame, cannot be averaged and are left untouched.
+``qtorque``/``pose``/``value`` array) by averaging the immediately preceding
+and following frame values. Gaps spanning two or more consecutive frames, and
+gaps at the first or last frame, cannot be averaged and are left untouched.
 """
 
 import argparse
@@ -37,8 +37,12 @@ def _copy_dataset(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     output_path.mkdir(parents=True, exist_ok=True)
 
     src_dataset = Dataset(input_path)
-    # copy metadata.
-    src_dataset.meta.write(pathlib.Path(output_path))
+    # repair only fixes gaps in the recorded data, so we can just copy the metadata and episodes.jsonl files.
+    shutil.copy2(src_dataset.root_path / "metadata.yaml", output_path / "metadata.yaml")
+    episodes_jsonl = src_dataset.root_path / "episodes.jsonl"
+    if episodes_jsonl.exists():
+        # Unversioned datasets keep their episodes in episodes.jsonl.
+        shutil.copy2(episodes_jsonl, output_path / "episodes.jsonl")
 
     # save episodes
     for episode in src_dataset.meta.episodes:

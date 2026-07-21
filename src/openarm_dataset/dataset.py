@@ -28,6 +28,20 @@ from .camera import Camera
 from .metadata import Metadata
 from .sampler import Sampler, Sample
 
+# Attributes that may appear as columns in a state.parquet file.
+STATE_ATTRIBUTES = ("qpos", "qvel", "qtorque", "pose")
+
+POSE_JOINTS = (
+    "x",
+    "y",
+    "z",
+    "qw",
+    "qx",
+    "qy",
+    "qz",
+    "gripper",
+)
+
 
 class Dataset:
     """OpenArm Dataset."""
@@ -173,7 +187,9 @@ class Dataset:
             cutoff: If not None, smoothing is applied using this value.
 
         Returns:
-            Dictionary mapping names to DataFrames.
+            Dictionary mapping names to DataFrames. Keys reflect the
+            attributes actually recorded (any of qpos/qvel/qtorque/pose
+            per arm component).
 
         Example:
             {
@@ -204,7 +220,9 @@ class Dataset:
             cutoff: If not None, smoothing is applied using this value.
 
         Returns:
-            Dictionary mapping names to DataFrames.
+            Dictionary mapping names to DataFrames. Keys reflect the
+            attributes actually recorded (qpos for joint-space actions,
+            pose for Cartesian actions).
 
         Example:
             {
@@ -317,7 +335,15 @@ class Dataset:
                 for component in embodiment.components:
                     state_path = base_path / component / "state.parquet"
                     if state_path.exists():
-                        for attr_name in ("qpos", "qvel", "qtorque"):
+                        # state.parquet is self-describing: one list column
+                        # per attribute.
+                        for attr_name in pq.read_schema(state_path).names:
+                            if attr_name == "timestamp":
+                                continue
+                            if attr_name not in STATE_ATTRIBUTES:
+                                raise ValueError(
+                                    f"Unknown attribute {attr_name!r} in {state_path}"
+                                )
                             attributes.append(
                                 {
                                     "key": f"{name}/{component}/{attr_name}",
@@ -338,6 +364,10 @@ class Dataset:
                             )
                         else:
                             path = base_path / component / f"{attribute}.parquet"
+                        # The recorder only writes attributes that were
+                        # actually recorded.
+                        if not path.exists():
+                            continue
                         attributes.append(
                             {
                                 "key": key,
@@ -350,13 +380,18 @@ class Dataset:
             else:
                 for attribute in embodiment.attributes:
                     key = f"{name}/{attribute}"
+                    path = base_path / f"{attribute}.parquet"
+                    # The recorder only writes attributes that were
+                    # actually recorded.
+                    if not path.exists():
+                        continue
                     attributes.append(
                         {
                             "key": key,
                             "embodiment": embodiment,
                             "component": None,
                             "name": attribute,
-                            "path": base_path / f"{attribute}.parquet",
+                            "path": path,
                         }
                     )
         return attributes
@@ -385,9 +420,8 @@ class Dataset:
     ) -> pd.DataFrame:
         df = pd.read_parquet(attribute["path"])
         if attribute["path"].name == "state.parquet":
-            # 0.3.0 uses state.parquet with qpos/qvel/qtorque columns.
             column_name = attribute["name"]
-            drop_columns = [c for c in ("qpos", "qvel", "qtorque") if c in df.columns]
+            drop_columns = [c for c in df.columns if c != "timestamp"]
         elif "positions" in df:
             # No version and 0.1.0 use "positions"
             column_name = "positions"
@@ -395,7 +429,11 @@ class Dataset:
         else:
             column_name = "value"
             drop_columns = ["value"]
-        df[list(attribute["embodiment"].joints)] = pd.DataFrame(
+        if attribute["name"] == "pose":
+            joints = POSE_JOINTS
+        else:
+            joints = attribute["embodiment"].joints
+        df[list(joints)] = pd.DataFrame(
             df[column_name].tolist(),
             index=df.index,
         )
@@ -494,9 +532,31 @@ class Dataset:
                     written_state_paths.add(new_path)
                     continue
                 if component:
-                    new_path = base_path / component / f"{name}.parquet"
-                else:
-                    new_path = base_path / f"{name}.parquet"
+                    # 0.4.0 stores component data as self-describing
+                    # state.parquet. Legacy per-attribute sources are
+                    # assumed to have exactly one attribute per component
+                    # (currently only "qpos"); a second attribute would
+                    # collide on the same state.parquet and silently lose
+                    # data, so fail loudly instead of merging columns.
+                    new_path = base_path / component / "state.parquet"
+                    if new_path in written_state_paths:
+                        raise ValueError(
+                            f"Cannot convert multiple attributes for component "
+                            f"{component!r} into a single {new_path}: attribute "
+                            f"{name!r} would overwrite data already written for "
+                            f"this component."
+                        )
+                    new_path.parent.mkdir(parents=True, exist_ok=True)
+                    df = pd.read_parquet(attribute["path"])
+                    # No version and 0.1.0 use "positions"
+                    if "positions" in df:
+                        df["value"] = df["positions"]
+                        df = df.drop(columns=["positions"])
+                    df = df.rename(columns={"value": name})
+                    df.to_parquet(new_path)
+                    written_state_paths.add(new_path)
+                    continue
+                new_path = base_path / f"{name}.parquet"
                 new_path.parent.mkdir(parents=True, exist_ok=True)
                 df = pd.read_parquet(attribute["path"])
                 # No version and 0.1.0 use "positions"
