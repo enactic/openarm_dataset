@@ -17,6 +17,7 @@
 import argparse
 import openarm_dataset
 import pathlib
+import sys
 
 
 def main():
@@ -63,6 +64,13 @@ def main():
         default=False,
     )
     parser.add_argument(
+        "--valid-only",
+        help="Include only episodes not marked invalid by openarm-dataset-validate "
+        "in the output dataset (default: False)",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--camera-format",
         help="How to store camera frames when the output format is openarm: "
         "'dir' (one JPEG file per frame, default) or 'tar' (one .tar archive "
@@ -80,7 +88,7 @@ def main():
     )
 
     args = parser.parse_args()
-    write_kwargs = {"format": args.format}
+    write_kwargs = {"format": args.format, "valid_only": args.valid_only}
     if args.format in ("lerobot_v2.1", "lerobot_v3.0", "gr00t"):
         write_kwargs["fps"] = args.fps
         write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
@@ -99,6 +107,14 @@ def main():
         write_kwargs["camera_format"] = args.camera_format
 
     old_dataset = openarm_dataset.Dataset(args.input)
+    if args.valid_only and not any(
+        "valid" in episode for episode in old_dataset.meta.episodes
+    ):
+        print(
+            "Warning: --valid-only is specified but no episode has a 'valid' "
+            "flag; run openarm-dataset-validate first to mark invalid episodes",
+            file=sys.stderr,
+        )
     old_dataset.write(args.output, **write_kwargs)
 
 

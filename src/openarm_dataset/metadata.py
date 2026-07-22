@@ -23,11 +23,20 @@ import json
 import yaml
 
 
+def episode_is_valid(episode: dict) -> bool:
+    """Return whether the episode is not marked invalid.
+
+    Episodes without a ``valid`` flag are treated as valid.
+    """
+    return episode.get("valid", True)
+
+
 class Metadata:
     """Metadata for OpenArm Dataset."""
 
     def __init__(self, path: str | os.PathLike):
         """Initialize Metadata."""
+        self.path = pathlib.Path(path)
         self.data = self._load_yaml(path)
         # Unversioned dataset. This is for backward compatibility.
         if "meta" in self.data:
@@ -113,12 +122,41 @@ class Metadata:
         del equipment["follower"]
         return equipment
 
-    def write(self, output: str | os.PathLike):
-        """Write this metadata as the latest OpenArm dataset format."""
+    def save(self):
+        """Write this metadata back to the file it was loaded from.
+
+        Unlike write(), the dataset format version is preserved. For
+        unversioned datasets only episodes.jsonl is rewritten because
+        episodes are stored there instead of metadata.yaml.
+        """
+        if self.version is None:
+            episodes_path = self.path.parent / "episodes.jsonl"
+            with open(episodes_path, "w") as f:
+                for episode in self.episodes:
+                    f.write(json.dumps(episode) + "\n")
+        else:
+            with open(self.path, "w") as f:
+                yaml.safe_dump(self.data, f)
+
+    def write(self, output: str | os.PathLike, valid_only: bool = False):
+        """Write this metadata as the latest OpenArm dataset format.
+
+        Args:
+            output: Output directory.
+            valid_only: If True, episodes marked invalid (``valid: false``)
+                are excluded.
+
+        """
         output = pathlib.Path(output)
         data = copy.deepcopy(self.data)
         latest_version = "0.4.0"
         data["version"] = latest_version
+        if valid_only:
+            data["episodes"] = [
+                episode
+                for episode in data.get("episodes", [])
+                if episode_is_valid(episode)
+            ]
         if self.version is None:
             data["equipment"] = self._convert_unversioned_equipment()
         if self.version is None or self.version == "0.1.0":

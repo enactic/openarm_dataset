@@ -164,10 +164,15 @@ produces v0.4.0.
 Validate a dataset:
 
 ```bash
-openarm-dataset-validate <input>
+openarm-dataset-validate <input> \
+    [--no-update-metadata]  # do not record per-episode validity in the metadata
 ```
 
-Exits with status `1` if any errors are reported.
+Exits with status `1` if any errors are reported. The result is also recorded
+per episode as a boolean `valid` flag in the dataset metadata (`metadata.yaml`,
+or `episodes.jsonl` for unversioned datasets) unless `--no-update-metadata` is
+given. Episodes marked `valid: false` can be excluded from conversion with
+`openarm-dataset-convert --valid-only`.
 
 Repair a dataset:
 
@@ -206,12 +211,18 @@ openarm-dataset-convert <input> <output> \
     [--smoothing-cutoff FLOAT] # default 1.0 (lerobot/gr00t only) \
     [--train-split FLOAT]      # default 0.8 (lerobot/gr00t only) \
     [--success-only]           # lerobot/gr00t only \
+    [--valid-only]             # exclude episodes marked invalid \
     [--state {qpos,pose,rot6d}] # default qpos (lerobot/gr00t only)
 ```
 
 The `--fps`, `--smoothing-cutoff`, `--train-split`, `--success-only`, and
 `--state` flags apply only when `--format lerobot_v2.1`, `--format
 lerobot_v3.0`, or `--format gr00t`.
+The `--valid-only` flag applies to every output format and excludes episodes
+marked `valid: false` by `openarm-dataset-validate`; episodes without the
+flag are treated as valid. If no episode has a `valid` flag (i.e. the dataset
+has not been validated yet), a warning is printed on stderr and nothing is
+excluded.
 The `gr00t` format produces a LeRobot v2.1 dataset plus a GR00T-compatible
 `meta/modality.json` (see [Isaac-GR00T data preparation](https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/data_preparation.md)).
 
