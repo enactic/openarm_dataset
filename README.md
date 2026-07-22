@@ -186,6 +186,46 @@ flags apply only when `--format lerobot_v2.1` or `--format gr00t`.
 The `gr00t` format produces a LeRobot v2.1 dataset plus a GR00T-compatible
 `meta/modality.json` (see [Isaac-GR00T data preparation](https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/data_preparation.md)).
 
+Add kinematics-derived state attributes:
+
+```bash
+openarm-dataset-kinematics <input> \
+    [--output PATH]         # default: overwrite <input> in place \
+    [--camera-format {dir,tar}] # default dir \
+    [--mode {right,left,bimanual}] # default bimanual \
+    [--xml PATH] [--keyframe NAME]                 # MuJoCo scene overrides \
+    [--frame-{right,left} NAME] [--frame-type-{right,left} {body,site,geom}] \
+    [--pos-cost FLOAT] [--ori-cost FLOAT] [...]    # IK solver tuning
+```
+
+Fills in the state attributes that can be derived with
+[openarm_control](https://github.com/enactic/openarm_control) FK/IK: an arm
+`state.parquet` with `qpos` but no `pose` gains `pose` via forward kinematics,
+and one with `pose` but no `qpos` gains `qpos` via inverse kinematics (seeded
+from the episode's recorded qpos and tracked along the pose trajectory).
+With `--output` the input is first written there in the latest format and the
+copy is augmented; without it the input dataset is modified in place.
+Recorded `pose` data must be
+end-effector poses in the MuJoCo model's world frame (the openarm_control
+Cartesian-teleop convention); the kinematics use the model at the chosen
+keyframe, and time-varying lifter elevation is not folded in.
+
+When IK runs, per-file metrics are printed for every augmented
+`state.parquet` (episode × obs/action × side):
+
+```
+Added pose to 4 file(s), qpos to 4 file(s).
+IK metrics per file:
+  episode 0 action arms/right: 90 rows, 0 failed, 2 unconverged
+  episode 0 action arms/left: 90 rows, 0 failed, 0 unconverged
+  ...
+```
+
+`failed` counts samples where the solver returned no solution (the previous
+row's solution is reused); `unconverged` counts samples still outside the
+convergence tolerances after the solver-round cap (the best-effort solution
+is kept).
+
 Upload a dataset to the Hugging Face Hub:
 
 ```bash

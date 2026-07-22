@@ -28,6 +28,8 @@ dependencies = [
     "huggingface_hub",
     "jinja2",
     "numpy",
+    # FK/IK used by openarm-dataset-kinematics.
+    "openarm-control",
     "pandas",
     "pillow",
     "pyarrow",
@@ -58,6 +60,7 @@ Repository = "https://github.com/enactic/openarm_dataset.git"
 
 [project.scripts]
 openarm-dataset-convert = "openarm_dataset.convert:main"
+openarm-dataset-kinematics = "openarm_dataset.kinematics:main"
 openarm-dataset-merge = "openarm_dataset.merge:main"
 openarm-dataset-repair = "openarm_dataset.repair:main"
 openarm-dataset-upload = "openarm_dataset.upload:main"
