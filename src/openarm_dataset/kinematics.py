@@ -31,6 +31,7 @@ folded into the kinematics.
 
 import argparse
 import pathlib
+import tempfile
 
 import numpy as np
 import openarm_control
@@ -304,8 +305,22 @@ def _augment_state(
         }
     else:
         return None
-    pq.write_table(table.replace_schema_metadata(None), path)
+    _write_parquet_atomically(table.replace_schema_metadata(None), path)
     return record
+
+
+def _write_parquet_atomically(table: pa.Table, path: pathlib.Path) -> None:
+    """Write a parquet file without replacing the original until write succeeds."""
+    original_mode = path.stat().st_mode & 0o7777
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".parquet",
+    ) as tmp_file:
+        tmp_path = pathlib.Path(tmp_file.name)
+        pq.write_table(table, tmp_path)
+        tmp_path.chmod(original_mode)
+        tmp_path.replace(path)
 
 
 def _load_seed_qpos(
