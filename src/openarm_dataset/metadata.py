@@ -23,12 +23,19 @@ import json
 import yaml
 
 
-def episode_is_valid(episode: dict) -> bool:
-    """Return whether the episode is not marked invalid.
+class Episode(dict):
+    """An episode in the dataset metadata."""
 
-    Episodes without a ``valid`` flag are treated as valid.
-    """
-    return episode.get("valid", True)
+    def valid(self) -> bool:
+        """Return whether this episode is not marked invalid.
+
+        Episodes without a ``valid`` flag are treated as valid.
+        """
+        return self.get("valid", True)
+
+
+# yaml.safe_dump() doesn't accept dict subclasses by default.
+yaml.SafeDumper.add_representer(Episode, yaml.SafeDumper.represent_dict)
 
 
 class Metadata:
@@ -47,6 +54,10 @@ class Metadata:
                 for line in f:
                     episodes.append(json.loads(line))
             self.data["episodes"] = episodes
+        if "episodes" in self.data:
+            self.data["episodes"] = [
+                Episode(episode) for episode in self.data["episodes"]
+            ]
 
     def _load_yaml(self, path: str | os.PathLike) -> dict:
         with open(path) as f:
@@ -78,7 +89,7 @@ class Metadata:
         return self.data.get("tasks")
 
     @property
-    def episodes(self) -> list[dict]:
+    def episodes(self) -> list[Episode]:
         """Get episodes."""
         return self.data.get("episodes", [])
 
@@ -125,18 +136,13 @@ class Metadata:
     def save(self):
         """Write this metadata back to the file it was loaded from.
 
-        Unlike write(), the dataset format version is preserved. For
-        unversioned datasets only episodes.jsonl is rewritten because
-        episodes are stored there instead of metadata.yaml.
+        Unlike write(), the dataset format version is preserved.
+        Unversioned datasets aren't supported.
         """
         if self.version is None:
-            episodes_path = self.path.parent / "episodes.jsonl"
-            with open(episodes_path, "w") as f:
-                for episode in self.episodes:
-                    f.write(json.dumps(episode) + "\n")
-        else:
-            with open(self.path, "w") as f:
-                yaml.safe_dump(self.data, f)
+            raise ValueError("Can't save metadata of an unversioned dataset")
+        with open(self.path, "w") as f:
+            yaml.safe_dump(self.data, f)
 
     def write(self, output: str | os.PathLike, valid_only: bool = False):
         """Write this metadata as the latest OpenArm dataset format.
@@ -153,9 +159,7 @@ class Metadata:
         data["version"] = latest_version
         if valid_only:
             data["episodes"] = [
-                episode
-                for episode in data.get("episodes", [])
-                if episode_is_valid(episode)
+                episode for episode in data.get("episodes", []) if episode.valid()
             ]
         if self.version is None:
             data["equipment"] = self._convert_unversioned_equipment()

@@ -169,9 +169,9 @@ openarm-dataset-validate <input> \
 ```
 
 Exits with status `1` if any errors are reported. The result is also recorded
-per episode as a boolean `valid` flag in the dataset metadata (`metadata.yaml`,
-or `episodes.jsonl` for unversioned datasets) unless `--no-update-metadata` is
-given. Episodes marked `valid: false` can be excluded from conversion with
+per episode as a boolean `valid` flag in `metadata.yaml` unless
+`--no-update-metadata` is given. Recording is not supported for unversioned
+datasets. Episodes marked `valid: false` can be excluded from conversion with
 `openarm-dataset-convert --valid-only`.
 
 Repair a dataset:

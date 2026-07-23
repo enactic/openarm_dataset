@@ -26,7 +26,7 @@ from .dataset import (
     Dataset,
 )
 from .ffmpeg import VIDEO_PIX_FMT, encode_mp4
-from .metadata import OpenArm, episode_is_valid
+from .metadata import OpenArm
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -121,7 +121,7 @@ def _collect_downsampled_data(
     for episode_index, episode in enumerate(dataset.meta.episodes):
         if not episode["success"] and success_only:
             continue
-        if valid_only and not episode_is_valid(episode):
+        if valid_only and not episode.valid():
             continue
         samples = dataset.sample(hz=fps, episode=episode, state=state)
         num_frames = len(samples)

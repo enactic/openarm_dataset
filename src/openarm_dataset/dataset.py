@@ -20,15 +20,14 @@ import shutil
 import warnings
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pandas as pd
 import scipy.signal as signal
 
 from .camera import Camera
-from .metadata import Metadata, OpenArm, episode_is_valid
+from .metadata import Metadata, OpenArm
 from .sampler import Sampler, Sample
+from .validator import Validator
 
 # Attributes that may appear as columns in a state.parquet file.
 STATE_ATTRIBUTES = ("qpos", "qvel", "qtorque", "pose")
@@ -158,70 +157,25 @@ class Dataset:
                 are not reported.
             update_metadata: If ``True``, the validation result is recorded
                 in the dataset metadata as a boolean ``valid`` flag per
-                episode.
+                episode. Ignored for unversioned datasets.
 
         Returns:
             ``True`` if the dataset is valid, ``False`` otherwise.
 
         """
+        # The valid flag write feature is disabled for unversioned datasets.
+        if self.meta.version is None:
+            update_metadata = False
+        validator = Validator(self, on_error=on_error)
         valid = True
         for episode in self.meta.episodes:
-            episode_valid = self._validate_episode(episode, on_error)
+            episode_valid = validator.validate_episode(episode)
             if update_metadata:
                 episode["valid"] = episode_valid
             if not episode_valid:
                 valid = False
         if update_metadata:
             self.meta.save()
-        return valid
-
-    def _validate_episode(self, episode: dict, on_error=None) -> bool:
-        valid = True
-        checked_paths = set()
-        for type_name in ("obs", "action"):
-            for attribute in self.get_embodiment_attributes(type_name, episode):
-                path = attribute["path"]
-                if path in checked_paths or not path.exists():
-                    continue
-                checked_paths.add(path)
-                file_meta = pq.read_metadata(path)
-                has_null = False
-                for rg_index in range(file_meta.num_row_groups):
-                    row_group = file_meta.row_group(rg_index)
-                    for col_index in range(row_group.num_columns):
-                        col_meta = row_group.column(col_index)
-                        col_name = col_meta.path_in_schema.split(".")[0]
-                        if col_name == "timestamp":
-                            continue
-                        stats = col_meta.statistics
-                        if (
-                            stats is not None
-                            and stats.has_null_count
-                            and stats.null_count > 0
-                        ):
-                            has_null = True
-                            break
-                    if has_null:
-                        break
-                if not has_null:
-                    table = pq.read_table(path)
-                    for col_name in table.schema.names:
-                        if col_name == "timestamp":
-                            continue
-                        col = table.column(col_name)
-                        flat = col.combine_chunks().values
-                        if (
-                            pa.types.is_floating(flat.type)
-                            and pc.any(pc.is_nan(flat)).as_py()
-                        ):
-                            has_null = True
-                            break
-                if has_null:
-                    if on_error is not None:
-                        on_error(
-                            f"{path.relative_to(self.root_path)}: includes null values"
-                        )
-                    valid = False
         return valid
 
     @property
@@ -729,7 +683,7 @@ class Dataset:
         self, output: Path, camera_format: str = "dir", valid_only: bool = False
     ):
         for episode in self.meta.episodes:
-            if valid_only and not episode_is_valid(episode):
+            if valid_only and not episode.valid():
                 continue
             self._write_episode(output, episode, camera_format=camera_format)
 

@@ -124,7 +124,6 @@ def test_validate_update_metadata(tmp_path):
     _inject_null_qpos(state_path)
 
     assert not Dataset(tmp_path).validate(update_metadata=True)
-    print(Dataset(tmp_path).meta.episodes)
     assert Dataset(tmp_path).meta.episodes == [
         {"id": "0", "success": False, "task_index": 0, "valid": False},
         {"id": "3", "success": True, "task_index": 0, "valid": True},
@@ -132,6 +131,20 @@ def test_validate_update_metadata(tmp_path):
 
     # Metadata version is preserved.
     assert Dataset(tmp_path).meta.version == "0.3.0"
+
+
+UNVERSIONED_DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_unversioned"
+
+
+def test_validate_update_metadata_unversioned(tmp_path):
+    shutil.copytree(UNVERSIONED_DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    metadata_yaml = (tmp_path / "metadata.yaml").read_text()
+    episodes_jsonl = (tmp_path / "episodes.jsonl").read_text()
+
+    # The valid flag write feature is disabled for unversioned datasets.
+    assert Dataset(tmp_path).validate(update_metadata=True)
+    assert (tmp_path / "metadata.yaml").read_text() == metadata_yaml
+    assert (tmp_path / "episodes.jsonl").read_text() == episodes_jsonl
 
 
 def test_validate_cli_valid(tmp_path):
