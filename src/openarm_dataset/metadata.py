@@ -15,7 +15,7 @@
 """Metadata for OpenArm Dataset."""
 
 from __future__ import annotations
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 import copy
 import os
 import pathlib
@@ -23,19 +23,43 @@ import json
 import yaml
 
 
-class Episode(dict):
-    """An episode in the dataset metadata."""
+class Episode(MutableMapping):
+    """An episode in the dataset metadata.
+
+    A view of an episode dict in Metadata; changes are written through
+    to the underlying dict.
+    """
+
+    def __init__(self, data: dict):
+        """Initialize Episode."""
+        self._data = data
+
+    def __getitem__(self, key):
+        """Return data for the key."""
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        """Set data for the key."""
+        self._data[key] = value
+
+    def __delitem__(self, key):
+        """Delete data for the key."""
+        del self._data[key]
+
+    def __iter__(self):
+        """Return iterator."""
+        return iter(self._data)
+
+    def __len__(self):
+        """Return number of items."""
+        return len(self._data)
 
     def valid(self) -> bool:
         """Return whether this episode is not marked invalid.
 
         Episodes without a ``valid`` flag are treated as valid.
         """
-        return self.get("valid", True)
-
-
-# yaml.safe_dump() doesn't accept dict subclasses by default.
-yaml.SafeDumper.add_representer(Episode, yaml.SafeDumper.represent_dict)
+        return self._data.get("valid", True)
 
 
 class Metadata:
@@ -54,10 +78,6 @@ class Metadata:
                 for line in f:
                     episodes.append(json.loads(line))
             self.data["episodes"] = episodes
-        if "episodes" in self.data:
-            self.data["episodes"] = [
-                Episode(episode) for episode in self.data["episodes"]
-            ]
 
     def _load_yaml(self, path: str | os.PathLike) -> dict:
         with open(path) as f:
@@ -91,7 +111,7 @@ class Metadata:
     @property
     def episodes(self) -> list[Episode]:
         """Get episodes."""
-        return self.data.get("episodes", [])
+        return [Episode(episode) for episode in self.data.get("episodes", [])]
 
     @property
     def num_episodes(self) -> int:
@@ -159,7 +179,9 @@ class Metadata:
         data["version"] = latest_version
         if valid_only:
             data["episodes"] = [
-                episode for episode in data.get("episodes", []) if episode.valid()
+                episode
+                for episode in data.get("episodes", [])
+                if Episode(episode).valid()
             ]
         if self.version is None:
             data["equipment"] = self._convert_unversioned_equipment()
