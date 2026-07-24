@@ -469,7 +469,8 @@ def _write_info_json(
     output_dir,
     fps,
     train_split,
-    joint_names,
+    obs_names,
+    action_names,
     total_frames,
     remap_task_index,
 ):
@@ -477,14 +478,14 @@ def _write_info_json(
     features = {
         "action": {
             "dtype": "float32",
-            "names": joint_names,
-            "shape": [len(joint_names)],
+            "names": action_names,
+            "shape": [len(action_names)],
             "fps": fps,
         },
         "observation.state": {
             "dtype": "float32",
-            "names": joint_names,
-            "shape": [len(joint_names)],
+            "names": obs_names,
+            "shape": [len(obs_names)],
             "fps": fps,
         },
         "timestamp": {"dtype": "float64", "shape": [1], "names": None, "fps": fps},
@@ -566,8 +567,13 @@ def to_lerobotv30(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
+    state: str = "qpos",
 ) -> None:
-    """Convert the given dataset to LeRobot v3.0 format."""
+    """Convert the given dataset to LeRobot v3.0 format.
+
+    The arm state is exported in the ``state`` representation ("qpos" by
+    default), converted on the fly when the dataset recorded another one.
+    """
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
     if fps <= 0:
@@ -576,8 +582,10 @@ def to_lerobotv30(
     dataset.set_smoothing(cutoff=smoothing_cutoff)
     output_dir = Path(output_dir)
 
-    joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
-    records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
+    # Identical for obs and action: both export the same uniform state
+    # representation.
+    keys, names = _collect_keys_and_joint_names(dataset, state)
+    records = _collect_downsampled_data(dataset, fps, keys, keys, success_only, state)
 
     if not records:
         raise ValueError("No episodes to write.")
@@ -609,7 +617,8 @@ def to_lerobotv30(
         output_dir,
         fps,
         train_split,
-        joint_names,
+        names,
+        names,
         total_frames,
         remap_task_index,
     )

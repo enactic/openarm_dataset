@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Add kinematics-derived state attributes to an OpenArm dataset.
+"""FK/IK engines for on-the-fly qpos/pose conversion.
 
-0.4.0 ``state.parquet`` files are self-describing and can hold multiple
-attribute columns. This module fills in the attributes that can be derived
-with `openarm_control <https://github.com/enactic/openarm_control>`_:
-
-- a file with ``qpos`` but no ``pose`` gains ``pose`` via forward kinematics
-- a file with ``pose`` but no ``qpos`` gains ``qpos`` via inverse kinematics
+An OpenArm dataset stores only the raw recorded arm state (``qpos`` and/or
+``pose``); the ``Dataset`` API converts between representations on the fly
+using `openarm_control <https://github.com/enactic/openarm_control>`_:
+``qpos`` to ``pose`` via forward kinematics and ``pose`` to ``qpos`` via
+inverse kinematics.
 
 Poses are end-effector poses of the configured EE frames expressed in the
 MuJoCo model's world frame — the same convention openarm_control uses for
@@ -30,17 +29,9 @@ folded into the kinematics.
 """
 
 import argparse
-import pathlib
-import tempfile
 
 import numpy as np
 import openarm_control
-import pyarrow as pa
-import pyarrow.parquet as pq
-from tqdm import tqdm
-
-from .dataset import Dataset
-from .metadata import OpenArm
 
 SIDES = ("right", "left")
 
@@ -213,205 +204,3 @@ def create_engines(
             other_home_qpos=home_qpos[other_side],
         )
     return engines
-
-
-def augment(
-    dataset: Dataset,
-    engines: dict[str, SideKinematics],
-) -> dict[str, int]:
-    """Add derived qpos/pose attributes to ``dataset`` in place.
-
-    Every OpenArm component ``state.parquet`` in the dataset gains the
-    missing derived attribute (pose via FK, qpos via IK). Files that already
-    have both attributes, and components without an engine, are left
-    untouched.
-
-    Args:
-        dataset: Dataset to augment.
-        engines: Mapping of component ("right"/"left") to SideKinematics.
-
-    Returns:
-        Counts of files that gained pose/qpos and of IK sample failures,
-        plus a ``"files"`` list with one per-file metrics record
-        (episode/type/name/component/attribute/rows/ik_failures/
-        ik_unconverged) for every file that gained an attribute.
-
-    """
-    stats = {
-        "pose_added": 0,
-        "qpos_added": 0,
-        "ik_failures": 0,
-        "ik_unconverged": 0,
-        "files": [],
-    }
-    for episode in tqdm(dataset.meta.episodes, desc="Adding kinematics", unit="ep"):
-        episode_path = dataset.episode_path(episode)
-        # obs first so an IK-derived obs qpos can seed the action IK.
-        for type_ in ("obs", "action"):
-            for name, embodiment in dataset.meta.equipment.embodiments.items():
-                if not isinstance(embodiment, OpenArm):
-                    continue
-                for component in embodiment.components:
-                    engine = engines.get(component)
-                    if engine is None:
-                        continue
-                    path = episode_path / type_ / name / component / "state.parquet"
-                    if not path.exists():
-                        continue
-                    record = _augment_state(path, engine, episode_path, name, component)
-                    if record is None:
-                        continue
-                    record.update(
-                        episode=episode["id"],
-                        type=type_,
-                        name=name,
-                        component=component,
-                    )
-                    stats["files"].append(record)
-                    stats[f"{record['attribute']}_added"] += 1
-                    stats["ik_failures"] += record["ik_failures"]
-                    stats["ik_unconverged"] += record["ik_unconverged"]
-    return stats
-
-
-def _augment_state(
-    path: pathlib.Path,
-    engine: SideKinematics,
-    episode_path: pathlib.Path,
-    name: str,
-    component: str,
-) -> dict | None:
-    table = pq.read_table(path)
-    columns = set(table.schema.names)
-    if "qpos" in columns and "pose" not in columns:
-        pose = engine.qpos_to_pose(_list_column(table, "qpos"))
-        table = _append_list_column(table, "pose", pose)
-        record = {
-            "attribute": "pose",
-            "rows": table.num_rows,
-            "ik_failures": 0,
-            "ik_unconverged": 0,
-        }
-    elif "pose" in columns and "qpos" not in columns:
-        pose = _list_column(table, "pose")
-        seed_qpos = _load_seed_qpos(episode_path, name, component, table)
-        qpos, failures, unconverged = engine.pose_to_qpos(pose, seed_qpos=seed_qpos)
-        table = _append_list_column(table, "qpos", qpos)
-        record = {
-            "attribute": "qpos",
-            "rows": table.num_rows,
-            "ik_failures": failures,
-            "ik_unconverged": unconverged,
-        }
-    else:
-        return None
-    _write_parquet_atomically(table.replace_schema_metadata(None), path)
-    return record
-
-
-def _write_parquet_atomically(table: pa.Table, path: pathlib.Path) -> None:
-    """Write a parquet file without replacing the original until write succeeds."""
-    original_mode = path.stat().st_mode & 0o7777
-    with tempfile.NamedTemporaryFile(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".parquet",
-    ) as tmp_file:
-        tmp_path = pathlib.Path(tmp_file.name)
-        pq.write_table(table, tmp_path)
-        tmp_path.chmod(original_mode)
-        tmp_path.replace(path)
-
-
-def _load_seed_qpos(
-    episode_path: pathlib.Path,
-    name: str,
-    component: str,
-    pose_table: pa.Table,
-) -> np.ndarray | None:
-    """Return the obs qpos row nearest the first pose timestamp, if any."""
-    if pose_table.num_rows == 0:
-        return None
-    obs_path = episode_path / "obs" / name / component / "state.parquet"
-    if not obs_path.exists():
-        return None
-    obs_table = pq.read_table(obs_path)
-    if "qpos" not in obs_table.schema.names or obs_table.num_rows == 0:
-        return None
-    obs_timestamps = obs_table.column("timestamp").to_numpy().astype("int64")
-    first_timestamp = pose_table.column("timestamp").to_numpy().astype("int64")[0]
-    index = int(np.argmin(np.abs(obs_timestamps - first_timestamp)))
-    return np.asarray(obs_table.column("qpos")[index].as_py(), dtype=np.float32)
-
-
-def _list_column(table: pa.Table, name: str) -> np.ndarray:
-    return np.asarray(table.column(name).to_pylist(), dtype=np.float32)
-
-
-def _append_list_column(table: pa.Table, name: str, values: np.ndarray) -> pa.Table:
-    column = pa.array(list(values), type=pa.list_(pa.float32()))
-    return table.append_column(name, column)
-
-
-def main():
-    """Add FK/IK-derived qpos/pose attributes to an OpenArm dataset."""
-    parser = argparse.ArgumentParser(
-        description="Add FK/IK-derived qpos/pose attributes to an OpenArm dataset"
-    )
-    parser.add_argument(
-        "input",
-        help="Path of an OpenArm dataset to be augmented",
-        type=pathlib.Path,
-    )
-    parser.add_argument(
-        "--output",
-        help="Path of the augmented OpenArm dataset (default: overwrite input)",
-        type=pathlib.Path,
-    )
-    parser.add_argument(
-        "--camera-format",
-        help="How to store camera frames: 'dir' (one JPEG file per frame, "
-        "default) or 'tar' (one .tar archive per camera) if output new dataset",
-        default="dir",
-        choices=["dir", "tar"],
-    )
-    openarm_control.register_common_args(parser)
-    openarm_control.register_ik_args(parser)
-    args = parser.parse_args()
-
-    engines = create_engines(args)
-    dataset = Dataset(args.input)
-    if args.output is not None:
-        output = pathlib.Path(args.output)
-        dataset.write(output, format="openarm", camera_format=args.camera_format)
-        dataset = Dataset(output)
-
-    stats = augment(dataset, engines)
-    print(
-        f"Added pose to {stats['pose_added']} file(s), "
-        f"qpos to {stats['qpos_added']} file(s)."
-    )
-    ik_files = [f for f in stats["files"] if f["attribute"] == "qpos"]
-    if ik_files:
-        print("IK metrics per file:")
-        for f in ik_files:
-            print(
-                f"  episode {f['episode']} {f['type']:<6} "
-                f"{f['name']}/{f['component']}: {f['rows']} rows, "
-                f"{f['ik_failures']} failed, {f['ik_unconverged']} unconverged"
-            )
-    if stats["ik_failures"]:
-        print(
-            f"Warning: IK failed on {stats['ik_failures']} sample(s); "
-            "the previous solution was reused for those samples."
-        )
-    if stats["ik_unconverged"]:
-        print(
-            f"Warning: IK did not reach the convergence tolerances on "
-            f"{stats['ik_unconverged']} sample(s); the best-effort solution "
-            "was kept for those samples."
-        )
-
-
-if __name__ == "__main__":
-    main()

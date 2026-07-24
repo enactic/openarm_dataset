@@ -19,8 +19,14 @@ import pandas as pd
 import numpy as np
 import json
 
-from .dataset import Dataset
+from .dataset import (
+    POSE_JOINTS,
+    ROT6D_JOINTS,
+    STATE_REPRESENTATIONS,
+    Dataset,
+)
 from .ffmpeg import VIDEO_PIX_FMT, encode_mp4
+from .metadata import OpenArm
 
 ROBOT_TYPE = "openarm_bimanual"
 CHUNK_SIZE = 1000
@@ -58,39 +64,67 @@ def _get_joint_names(component, joints):
     return [f"{component}_{joint}.pos" for joint in joints]
 
 
-def _collect_keys_and_joint_names(dataset: Dataset):
+# Joint names of the derived arm state representations. "qpos" keeps the
+# embodiment's own joints.
+STATE_JOINTS = {
+    "pose": POSE_JOINTS,
+    "rot6d": ROT6D_JOINTS,
+}
+
+
+def _attribute_joints(embodiment, attribute):
+    return STATE_JOINTS.get(attribute, embodiment.joints)
+
+
+def _embodiment_attributes(embodiment, state: str):
+    """Return the exported attributes: arms export ``state``, others their own."""
+    if isinstance(embodiment, OpenArm):
+        return (state,)
+    return embodiment.attributes
+
+
+def _collect_keys_and_joint_names(dataset: Dataset, state: str):
+    if state not in STATE_REPRESENTATIONS:
+        raise ValueError(
+            f"Unknown state representation {state!r}: "
+            f"expected one of {STATE_REPRESENTATIONS}"
+        )
     keys = []
     joint_names = []
     for name, embodiment in dataset.meta.equipment.embodiments.items():
-        if embodiment.components:
-            for component in embodiment.components:
-                for attribute in embodiment.attributes:
-                    key = f"{name}/{component}/{attribute}"
-                    keys.append(key)
-                    joint_names.extend(_get_joint_names(component, embodiment.joints))
-        else:
-            for attribute in embodiment.attributes:
-                key = f"{name}/{attribute}"
-                keys.append(key)
-                joint_names.extend(_get_joint_names(None, embodiment.joints))
+        components = embodiment.components if embodiment.components else (None,)
+        attributes = _embodiment_attributes(embodiment, state)
+        for component in components:
+            for attribute in attributes:
+                if component is None:
+                    keys.append(f"{name}/{attribute}")
+                else:
+                    keys.append(f"{name}/{component}/{attribute}")
+                joint_names.extend(
+                    _get_joint_names(
+                        component, _attribute_joints(embodiment, attribute)
+                    )
+                )
     return keys, joint_names
 
 
 def _collect_downsampled_data(
-    dataset: Dataset, fps: int, joint_keys, success_only=False
+    dataset: Dataset, fps: int, obs_keys, action_keys, success_only=False, state=None
 ):
     records = []
     for episode_index, episode in enumerate(dataset.meta.episodes):
         if not episode["success"] and success_only:
             continue
-        samples = dataset.sample(hz=fps, episode=episode)
+        samples = dataset.sample(hz=fps, episode=episode, state=state)
         num_frames = len(samples)
         sampled_obs = [
-            np.concatenate([s.obs[k] for k in joint_keys], axis=0).astype(np.float32)
+            np.concatenate([s.obs[k] for k in obs_keys], axis=0).astype(np.float32)
             for s in samples
         ]
         sampled_actions = [
-            np.concatenate([s.action[k] for k in joint_keys], axis=0).astype(np.float32)
+            np.concatenate([s.action[k] for k in action_keys], axis=0).astype(
+                np.float32
+            )
             for s in samples
         ]
         sampled_cameras = {
@@ -343,7 +377,8 @@ def _write_metadata(
     output_dir,
     fps,
     train_split,
-    joint_names,
+    obs_names,
+    action_names,
     remap_episode_index,
     remap_task_index,
 ):
@@ -444,12 +479,12 @@ def _write_metadata(
     all_actions = (
         np.vstack(all_actions)
         if all_actions
-        else np.empty((0, len(joint_names)), dtype=np.float32)
+        else np.empty((0, len(action_names)), dtype=np.float32)
     )
     all_observations = (
         np.vstack(all_observations)
         if all_observations
-        else np.empty((0, len(joint_names)), dtype=np.float32)
+        else np.empty((0, len(obs_names)), dtype=np.float32)
     )
     timestamp_all = (
         np.concatenate(timestamp_all)
@@ -503,13 +538,13 @@ def _write_metadata(
     features = {
         "action": {
             "dtype": "float32",
-            "names": joint_names,
-            "shape": [len(joint_names)],
+            "names": action_names,
+            "shape": [len(action_names)],
         },
         "observation.state": {
             "dtype": "float32",
-            "names": joint_names,
-            "shape": [len(joint_names)],
+            "names": obs_names,
+            "shape": [len(obs_names)],
         },
         "timestamp": {"dtype": "float64", "shape": [1], "names": None},
         "frame_index": {"dtype": "int64", "shape": [1], "names": None},
@@ -564,7 +599,7 @@ def _write_metadata(
         json.dump(info, f, ensure_ascii=False, indent=4)
 
 
-def _collect_modality_ranges(dataset: Dataset):
+def _collect_modality_ranges(dataset: Dataset, state: str):
     """Build named GR00T modality slices into the concatenated state/action vectors.
 
     Follows the same iteration order as _collect_keys_and_joint_names so the
@@ -577,15 +612,16 @@ def _collect_modality_ranges(dataset: Dataset):
         # naive singular: "arms" -> "arm"; embodiment set is closed (see metadata.py)
         base = name.removesuffix("s")
         components = embodiment.components if embodiment.components else (None,)
+        attributes = _embodiment_attributes(embodiment, state)
         for component in components:
             prefix = f"{component}_" if component else ""
-            for _attribute in embodiment.attributes:
+            for attribute in attributes:
                 key = f"{prefix}{base}"
                 if key in ranges:
                     raise NotImplementedError(
                         f"modality.json does not support multi-attribute embodiment {name!r}"
                     )
-                joints = embodiment.joints
+                joints = _attribute_joints(embodiment, attribute)
                 if joints[-1] == "gripper":
                     ranges[key] = {
                         "start": offset,
@@ -604,9 +640,9 @@ def _collect_modality_ranges(dataset: Dataset):
     return ranges
 
 
-def _write_modality_json(dataset: Dataset, output_dir: Path):
+def _write_modality_json(dataset: Dataset, output_dir: Path, state: str):
     """Write GR00T meta/modality.json describing the dataset layout."""
-    ranges = _collect_modality_ranges(dataset)
+    ranges = _collect_modality_ranges(dataset, state)
     modality = {
         "state": ranges,
         "action": ranges,
@@ -631,8 +667,13 @@ def to_lerobotv21(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
+    state: str = "qpos",
 ) -> None:
-    """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory."""
+    """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory.
+
+    The arm state is exported in the ``state`` representation ("qpos" by
+    default), converted on the fly when the dataset recorded another one.
+    """
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
 
@@ -644,11 +685,12 @@ def to_lerobotv21(
     # Create the output directories
     output_dir = Path(output_dir)
 
-    # Collect joint keys and names
-    joint_keys, joint_names = _collect_keys_and_joint_names(dataset)
+    # Collect joint keys and names (identical for obs and action: both
+    # export the same uniform state representation)
+    keys, names = _collect_keys_and_joint_names(dataset, state)
 
     # collect downsampled data for each episode
-    records = _collect_downsampled_data(dataset, fps, joint_keys, success_only)
+    records = _collect_downsampled_data(dataset, fps, keys, keys, success_only, state)
 
     if not records:
         raise ValueError("No episodes to write.")
@@ -669,7 +711,8 @@ def to_lerobotv21(
         output_dir,
         fps,
         train_split,
-        joint_names,
+        names,
+        names,
         remap_episode_index,
         remap_task_index,
     )
@@ -682,11 +725,13 @@ def to_gr00t(
     train_split: float = 0.8,
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
+    state: str = "qpos",
 ) -> None:
     """Convert the given dataset to GR00T LeRobot format.
 
     GR00T LeRobot is LeRobot v2.1 plus a meta/modality.json file describing
-    the state/action layout, videos, and annotations.
+    the state/action layout, videos, and annotations. See ``to_lerobotv21``
+    for the ``state`` semantics ("qpos" by default).
     """
     output_dir = Path(output_dir)
     to_lerobotv21(
@@ -696,5 +741,6 @@ def to_gr00t(
         train_split=train_split,
         smoothing_cutoff=smoothing_cutoff,
         success_only=success_only,
+        state=state,
     )
-    _write_modality_json(dataset, output_dir)
+    _write_modality_json(dataset, output_dir, state)

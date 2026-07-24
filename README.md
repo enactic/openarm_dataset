@@ -59,6 +59,33 @@ recorded with Cartesian teleoperation expose an 8-dim `pose` action
 ['x', 'y', 'z', 'qw', 'qx', 'qy', 'qz', 'gripper']
 ```
 
+The dataset itself only ever stores the raw recorded representation. To use a
+specific representation, pass `state=` to `load_obs`/`load_action`/`sample`:
+recorded data matching the request is returned as-is, and anything else is
+converted on the fly with
+[openarm_control](https://github.com/enactic/openarm_control) kinematics —
+`qpos` to `pose` via FK, `pose` to `qpos` via IK (seeded from the episode's
+recorded obs qpos and tracked along the pose trajectory; a warning reports
+samples where the solver failed or did not converge). `rot6d`
+(position + the first two rotation matrix columns + gripper, 10-dim) is
+derived from the pose:
+
+```python
+>>> action = dataset.load_action(0, state="qpos")  # IK from the recorded pose
+>>> list(action.keys())
+['arms/right/qpos', 'arms/left/qpos', 'lifter/elevation']
+>>> obs = dataset.load_obs(0, state="rot6d")       # FK, then 6D rotation
+>>> list(obs["arms/right/rot6d"].columns)
+['x', 'y', 'z', 'r11', 'r21', 'r31', 'r12', 'r22', 'r32', 'gripper']
+```
+
+Recorded `pose` data must be end-effector poses in the MuJoCo model's world
+frame (the openarm_control Cartesian-teleop convention); the kinematics use
+the model at its home keyframe, and time-varying lifter elevation is not
+folded in. Pass `kinematics=` to `Dataset` to override the engines built
+with `openarm_dataset.kinematics.create_engines()` (e.g. for a different
+scene or IK tolerances).
+
 Camera:
 
 ```python
@@ -178,53 +205,22 @@ openarm-dataset-convert <input> <output> \
     [--fps INT]                # default 30 (lerobot/gr00t only) \
     [--smoothing-cutoff FLOAT] # default 1.0 (lerobot/gr00t only) \
     [--train-split FLOAT]      # default 0.8 (lerobot/gr00t only) \
-    [--success-only]           # lerobot/gr00t only
+    [--success-only]           # lerobot/gr00t only \
+    [--state {qpos,pose,rot6d}] # default qpos (lerobot/gr00t only)
 ```
 
-The `--fps`, `--smoothing-cutoff`, `--train-split`, and `--success-only`
-flags apply only when `--format lerobot_v2.1` or `--format gr00t`.
+The `--fps`, `--smoothing-cutoff`, `--train-split`, `--success-only`, and
+`--state` flags apply only when `--format lerobot_v2.1`, `--format
+lerobot_v3.0`, or `--format gr00t`.
 The `gr00t` format produces a LeRobot v2.1 dataset plus a GR00T-compatible
 `meta/modality.json` (see [Isaac-GR00T data preparation](https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/data_preparation.md)).
 
-Add kinematics-derived state attributes:
-
-```bash
-openarm-dataset-kinematics <input> \
-    [--output PATH]         # default: overwrite <input> in place \
-    [--camera-format {dir,tar}] # default dir \
-    [--mode {right,left,bimanual}] # default bimanual \
-    [--xml PATH] [--keyframe NAME]                 # MuJoCo scene overrides \
-    [--frame-{right,left} NAME] [--frame-type-{right,left} {body,site,geom}] \
-    [--pos-cost FLOAT] [--ori-cost FLOAT] [...]    # IK solver tuning
-```
-
-Fills in the state attributes that can be derived with
-[openarm_control](https://github.com/enactic/openarm_control) FK/IK: an arm
-`state.parquet` with `qpos` but no `pose` gains `pose` via forward kinematics,
-and one with `pose` but no `qpos` gains `qpos` via inverse kinematics (seeded
-from the episode's recorded qpos and tracked along the pose trajectory).
-With `--output` the input is first written there in the latest format and the
-copy is augmented; without it the input dataset is modified in place.
-Recorded `pose` data must be
-end-effector poses in the MuJoCo model's world frame (the openarm_control
-Cartesian-teleop convention); the kinematics use the model at the chosen
-keyframe, and time-varying lifter elevation is not folded in.
-
-When IK runs, per-file metrics are printed for every augmented
-`state.parquet` (episode × obs/action × side):
-
-```
-Added pose to 4 file(s), qpos to 4 file(s).
-IK metrics per file:
-  episode 0 action arms/right: 90 rows, 0 failed, 2 unconverged
-  episode 0 action arms/left: 90 rows, 0 failed, 0 unconverged
-  ...
-```
-
-`failed` counts samples where the solver returned no solution (the previous
-row's solution is reused); `unconverged` counts samples still outside the
-convergence tolerances after the solver-round cap (the best-effort solution
-is kept).
+`--state` selects the arm state representation of the LeRobot output
+(default: `qpos`), converting on the fly (see the `state=` API above) when
+the dataset stores the other representation. Every arm stream is exported
+in this one representation, regardless of what was recorded.
+The converted values are only written to the LeRobot output; the OpenArm
+dataset itself always keeps the raw recorded data.
 
 Upload a dataset to the Hugging Face Hub:
 

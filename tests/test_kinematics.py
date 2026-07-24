@@ -15,34 +15,22 @@
 from pathlib import Path
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from openarm_dataset.dataset import Dataset
-from openarm_dataset.kinematics import augment, create_engines
+from openarm_dataset.kinematics import create_engines
 
 FIXTURE_DIR = Path(__file__).parent / "fixture"
-POSE_DIR = FIXTURE_DIR / "dataset_0.4.0_pose"
 QPOS_DIR = FIXTURE_DIR / "dataset_0.4.0_qpos"
 
 SIDES = ("right", "left")
 
 
-class FakeEngine:
-    """Stands in for SideKinematics without requiring the real solver."""
-
-    def qpos_to_pose(self, qpos):
-        return (np.asarray(qpos, dtype=np.float32) + 1.0).astype(np.float32)
-
-    def pose_to_qpos(self, pose, seed_qpos=None):
-        qpos = (np.asarray(pose, dtype=np.float32) - 1.0).astype(np.float32)
-        return qpos, 0, 0
-
-
-def run_augment(source, output, engines):
-    """Write ``source`` to ``output`` and augment it in place, like main()."""
-    Dataset(source).write(output, format="openarm")
-    return augment(Dataset(output), engines)
+@pytest.fixture(scope="module")
+def engines():
+    return create_engines()
 
 
 def state_path(root, episode_id, type_, side):
@@ -51,72 +39,53 @@ def state_path(root, episode_id, type_, side):
     )
 
 
-def test_augment_adds_missing_attributes_and_metrics(tmp_path):
-    output = tmp_path / "out"
-    stats = run_augment(POSE_DIR, output, {side: FakeEngine() for side in SIDES})
-    dataset = Dataset(output)
-    action = dataset.load_action(dataset.meta.episodes[0])
-    obs = dataset.load_obs(dataset.meta.episodes[0])
-    np.testing.assert_allclose(
-        action["arms/right/qpos"].to_numpy(),
-        action["arms/right/pose"].to_numpy() - 1.0,
-        rtol=1e-6,
-    )
-    np.testing.assert_allclose(
-        obs["arms/right/pose"].to_numpy(),
-        obs["arms/right/qpos"].to_numpy() + 1.0,
-        rtol=1e-6,
-    )
-    # 2 episodes x 2 sides for each direction.
-    assert stats["pose_added"] == 4
-    assert stats["qpos_added"] == 4
-    assert len(stats["files"]) == 8
-    record = next(
-        f
-        for f in stats["files"]
-        if f["episode"] == "0" and f["type"] == "action" and f["component"] == "right"
-    )
-    rows = pq.read_table(state_path(output, "0", "action", "right")).num_rows
-    assert record == {
-        "attribute": "qpos",
-        "rows": rows,
-        "ik_failures": 0,
-        "ik_unconverged": 0,
-        "episode": "0",
-        "type": "action",
-        "name": "arms",
-        "component": "right",
-    }
+def make_pose_only_actions(source, output, engines):
+    """Write ``source`` to ``output`` with action qpos replaced by FK poses.
+
+    The dataset_0.4.0_pose fixture's pose values are synthetic and not
+    reachable, so IK targets must be derived from the qpos fixture via FK.
+    """
+    Dataset(source).write(output, format="openarm")
+    for episode in Dataset(output).meta.episodes:
+        for side in SIDES:
+            path = state_path(output, episode["id"], "action", side)
+            table = pq.read_table(path)
+            qpos = np.asarray(table.column("qpos").to_pylist(), dtype=np.float32)
+            pose = engines[side].qpos_to_pose(qpos)
+            table = table.drop_columns(["qpos"]).append_column(
+                "pose", pa.array(list(pose), type=pa.list_(pa.float32()))
+            )
+            pq.write_table(table.replace_schema_metadata(None), path)
+
+
+def test_on_the_fly_fk_matches_engine(engines):
+    dataset = Dataset(QPOS_DIR, kinematics=engines)
+    episode = dataset.meta.episodes[0]
+    raw = Dataset(QPOS_DIR).load_action(episode)
+    action = dataset.load_action(episode, state="pose")
+    for side in SIDES:
+        qpos = raw[f"arms/{side}/qpos"].to_numpy(dtype=np.float32)
+        np.testing.assert_allclose(
+            action[f"arms/{side}/pose"].to_numpy(dtype=np.float32),
+            engines[side].qpos_to_pose(qpos),
+            rtol=1e-6,
+        )
 
 
 # mink's frozen-DOF task carries infinite weights; some BLAS backends emit
 # RuntimeWarnings for the resulting inf-times-zero products even though the
 # solutions stay finite. Upstream behavior, not ours.
 @pytest.mark.filterwarnings("ignore::RuntimeWarning:mink.tasks.task")
-def test_real_ik_qpos_reproduces_pose_under_fk(tmp_path):
-    # FK first: derive reachable poses from the qpos fixture. The pose
-    # fixture's values are synthetic and not reachable, so targets must
-    # come from FK.
-    fk_output = tmp_path / "fk"
-    run_augment(QPOS_DIR, fk_output, create_engines())
+def test_on_the_fly_ik_qpos_reproduces_pose_under_fk(engines, tmp_path):
+    output = tmp_path / "pose_only"
+    make_pose_only_actions(QPOS_DIR, output, engines)
 
-    # Strip qpos from the action files, leaving pose-only actions.
-    for episode in Dataset(fk_output).meta.episodes:
-        for side in SIDES:
-            path = state_path(fk_output, episode["id"], "action", side)
-            table = pq.read_table(path)
-            pq.write_table(table.drop_columns(["qpos"]), path)
-
-    engines = create_engines()
-    ik_output = tmp_path / "ik"
-    stats = run_augment(fk_output, ik_output, engines)
-    assert stats["qpos_added"] == 4
-    assert stats["ik_failures"] == 0
-
+    dataset = Dataset(output, kinematics=engines)
+    action = dataset.load_action(dataset.meta.episodes[0], state="qpos")
     for side in SIDES:
-        table = pq.read_table(state_path(ik_output, "0", "action", side))
+        qpos = action[f"arms/{side}/qpos"].to_numpy(dtype=np.float32)
+        table = pq.read_table(state_path(output, "0", "action", side))
         pose = np.asarray(table.column("pose").to_pylist(), dtype=np.float32)
-        qpos = np.asarray(table.column("qpos").to_pylist(), dtype=np.float32)
         fk_pose = engines[side].qpos_to_pose(qpos)
         np.testing.assert_allclose(fk_pose[:, :3], pose[:, :3], atol=1e-2)
         quat_dot = np.clip(np.abs(np.sum(fk_pose[:, 3:7] * pose[:, 3:7], axis=1)), 0, 1)
