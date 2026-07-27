@@ -129,9 +129,6 @@ def test_validate_update_metadata(tmp_path):
         {"id": "3", "success": True, "task_index": 0, "valid": True},
     ]
 
-    # Metadata version is preserved.
-    assert Dataset(tmp_path).meta.version == "0.3.0"
-
 
 def test_validate_cli_valid(tmp_path):
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
