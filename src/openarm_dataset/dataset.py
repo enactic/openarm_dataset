@@ -166,16 +166,8 @@ class Dataset:
         # The valid flag write feature is disabled for unversioned datasets.
         if self.meta.version is None:
             update_metadata = False
-        validator = Validator(self, on_error=on_error)
-        valid = True
-        for episode in self.meta.episodes:
-            episode_valid = validator.validate_episode(episode)
-            if update_metadata:
-                episode["valid"] = episode_valid
-            if not episode_valid:
-                valid = False
-        if update_metadata:
-            self.meta.save()
+        validator = Validator(self, on_error=on_error, update_metadata=update_metadata)
+        valid = validator.validate()
         return valid
 
     @property

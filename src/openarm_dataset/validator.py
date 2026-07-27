@@ -14,6 +14,8 @@
 
 """Validator for OpenArm Dataset."""
 
+from pyarrow.dataset import dataset
+
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -24,7 +26,7 @@ from .metadata import Episode
 class Validator:
     """Validator for OpenArm Dataset."""
 
-    def __init__(self, dataset, on_error=None):
+    def __init__(self, dataset, on_error=None, update_metadata=False):
         """Initialize Validator.
 
         Args:
@@ -36,14 +38,23 @@ class Validator:
         """
         self._dataset = dataset
         self._on_error = on_error
+        self._update_metadata = update_metadata
 
-    def validate_episode(self, episode: Episode) -> bool:
-        """Validate the given episode.
+    def validate(self) -> bool:
+        """Validate the dataset."""
+        valid = True
+        for episode in self._dataset.meta.episodes:
+            episode_valid = self._validate_episode(episode)
+            if self._update_metadata:
+                episode["valid"] = episode_valid
+            if not episode_valid:
+                valid = False
+        if self._update_metadata:
+            self._dataset.meta.save()
+        return valid
 
-        Returns:
-            ``True`` if the episode is valid, ``False`` otherwise.
-
-        """
+    def _validate_episode(self, episode: Episode) -> bool:
+        """Validate the given episode."""
         return self._validate_no_null_values(episode)
 
     def _report_error(self, message: str):
