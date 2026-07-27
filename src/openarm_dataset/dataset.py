@@ -17,7 +17,9 @@
 import os
 from pathlib import Path
 import shutil
+import warnings
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -25,11 +27,19 @@ import pandas as pd
 import scipy.signal as signal
 
 from .camera import Camera
-from .metadata import Metadata
+from .metadata import Metadata, OpenArm
 from .sampler import Sampler, Sample
 
 # Attributes that may appear as columns in a state.parquet file.
 STATE_ATTRIBUTES = ("qpos", "qvel", "qtorque", "pose")
+
+# Recorded attributes that describe an arm configuration.
+ARM_STATE_ATTRIBUTES = ("qpos", "pose")
+
+# Representations an arm state can be requested in. "qpos" and "pose" are
+# recorded attributes (converted with IK/FK when the other one was recorded);
+# "rot6d" is always derived from the pose.
+STATE_REPRESENTATIONS = ("qpos", "pose", "rot6d")
 
 POSE_JOINTS = (
     "x",
@@ -42,6 +52,68 @@ POSE_JOINTS = (
     "gripper",
 )
 
+# Position, the first two rotation matrix columns. 6D rotation and the gripper.
+ROT6D_JOINTS = (
+    "x",
+    "y",
+    "z",
+    "r11",
+    "r21",
+    "r31",
+    "r12",
+    "r22",
+    "r32",
+    "gripper",
+)
+
+
+def _pose_to_rot6d(pose: np.ndarray) -> np.ndarray:
+    """Convert poses ([N, 8]) to the 6D rotation representation ([N, 10])."""
+    pose = np.asarray(pose, dtype=np.float32)
+    quat = pose[:, 3:7].astype(np.float64)
+    norm = np.linalg.norm(quat, axis=1, keepdims=True)
+    # Propagate NaN for zero-norm (corrupt) quaternions instead of masking
+    # them with a plausible-looking rotation.
+    quat = np.divide(quat, norm, out=np.full_like(quat, np.nan), where=norm > 0)
+    w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+    rot6d = np.empty((len(pose), 10), dtype=np.float32)
+    rot6d[:, :3] = pose[:, :3]  # Position
+    rot6d[:, 3] = 1 - 2 * (y * y + z * z)
+    rot6d[:, 4] = 2 * (x * y + w * z)
+    rot6d[:, 5] = 2 * (x * z - w * y)
+    rot6d[:, 6] = 2 * (x * y - w * z)
+    rot6d[:, 7] = 1 - 2 * (x * x + z * z)
+    rot6d[:, 8] = 2 * (y * z + w * x)
+    rot6d[:, 9] = pose[:, 7]  # Gripper
+    return rot6d
+
+
+def _renormalize_orientation(df: pd.DataFrame, attribute: str) -> pd.DataFrame:
+    """Project smoothed orientation columns back onto valid rotations.
+
+    Component-wise smoothing leaves quaternions slightly off unit norm and
+    rot6d columns slightly non-orthonormal; renormalize (and Gram-Schmidt
+    for rot6d) so downstream consumers see valid rotations.
+    """
+    if attribute == "pose":
+        columns = list(POSE_JOINTS[3:7])
+        quat = df[columns].to_numpy()
+        norm = np.linalg.norm(quat, axis=1, keepdims=True)
+        df[columns] = np.divide(quat, norm, out=quat.copy(), where=norm > 0)
+    elif attribute == "rot6d":
+        a_columns = list(ROT6D_JOINTS[3:6])
+        b_columns = list(ROT6D_JOINTS[6:9])
+        a = df[a_columns].to_numpy()
+        b = df[b_columns].to_numpy()
+        norm_a = np.linalg.norm(a, axis=1, keepdims=True)
+        a = np.divide(a, norm_a, out=a.copy(), where=norm_a > 0)
+        b = b - np.sum(a * b, axis=1, keepdims=True) * a
+        norm_b = np.linalg.norm(b, axis=1, keepdims=True)
+        b = np.divide(b, norm_b, out=b.copy(), where=norm_b > 0)
+        df[a_columns] = a
+        df[b_columns] = b
+    return df
+
 
 class Dataset:
     """OpenArm Dataset."""
@@ -51,6 +123,7 @@ class Dataset:
         path: str | os.PathLike,
         meta: Metadata = None,
         camera_names: list[str] = None,
+        kinematics: dict = None,
     ):
         """Initialize Dataset.
 
@@ -60,12 +133,17 @@ class Dataset:
                 dataset if None.
             camera_names: Names of the camera to use. Uses all cameras in the
                 dataset if None.
+            kinematics: Mapping of arm component ("right"/"left") to a
+                kinematics engine (``kinematics.SideKinematics``) used for
+                on-the-fly qpos/pose conversion. Built lazily with
+                ``kinematics.create_engines()`` if None.
 
         """
         self.root_path = Path(path)
         self.meta = Metadata(self.root_path / "metadata.yaml") if meta is None else meta
         self._camera_names = camera_names
         self._smoothing_cutoff = None
+        self._kinematics = kinematics
 
     def set_smoothing(self, cutoff: float):
         """Set smoothing."""
@@ -177,6 +255,7 @@ class Dataset:
         episode: dict,
         use_unixtime: bool = False,
         cutoff: float = None,
+        state: str = None,
     ) -> dict[str, pd.DataFrame]:
         """Load obs data.
 
@@ -185,11 +264,16 @@ class Dataset:
             use_unixtime: If True, the DataFrame index is returned as Unix time
                 (float64) instead of datetime64[ns].
             cutoff: If not None, smoothing is applied using this value.
+            state: If not None, return arm states in this representation
+                ("qpos", "pose" or "rot6d"), converting the recorded data
+                on the fly (qpos to pose via FK, pose to qpos via IK) when
+                the requested representation was not recorded.
 
         Returns:
             Dictionary mapping names to DataFrames. Keys reflect the
             attributes actually recorded (any of qpos/qvel/qtorque/pose
-            per arm component).
+            per arm component); with ``state``, arm state keys use the
+            requested representation instead.
 
         Example:
             {
@@ -203,6 +287,7 @@ class Dataset:
             episode,
             use_unixtime,
             cutoff=cutoff or self._smoothing_cutoff,
+            state=state,
         )
 
     def load_action(
@@ -210,6 +295,7 @@ class Dataset:
         episode: dict,
         use_unixtime: bool = False,
         cutoff: float = None,
+        state: str = None,
     ) -> dict[str, pd.DataFrame]:
         """Load action data.
 
@@ -218,11 +304,16 @@ class Dataset:
             use_unixtime: If True, the DataFrame index is returned as Unix time
                 (float64) instead of datetime64[ns].
             cutoff: If not None, smoothing is applied using this value.
+            state: If not None, return arm states in this representation
+                ("qpos", "pose" or "rot6d"), converting the recorded data
+                on the fly (qpos to pose via FK, pose to qpos via IK) when
+                the requested representation was not recorded.
 
         Returns:
             Dictionary mapping names to DataFrames. Keys reflect the
             attributes actually recorded (qpos for joint-space actions,
-            pose for Cartesian actions).
+            pose for Cartesian actions); with ``state``, arm state keys
+            use the requested representation instead.
 
         Example:
             {
@@ -236,6 +327,7 @@ class Dataset:
             episode,
             use_unixtime=use_unixtime,
             cutoff=cutoff or self._smoothing_cutoff,
+            state=state,
         )
 
     def load_cameras(self, episode: dict) -> dict[str, Camera]:
@@ -285,12 +377,16 @@ class Dataset:
         self,
         hz: float,
         episode: dict,
+        state: str = None,
     ) -> list[Sample]:
         """Sample the all modalities data to the specified hz.
 
         Args:
             episode: Episode to sample.
             hz: Sampling hz.
+            state: If not None, return arm states in this representation
+                ("qpos", "pose" or "rot6d"), converted on the fly when the
+                requested representation was not recorded.
 
         Returns:
             List of Sample.
@@ -319,7 +415,7 @@ class Dataset:
 
         """
         sampler = Sampler()
-        return list(sampler.sample(self, episode, hz))
+        return list(sampler.sample(self, episode, hz, state=state))
 
     def get_embodiment_attributes(self, type_: str, episode: dict):
         """Return the list of embodiment attributes for the given type and episode."""
@@ -402,21 +498,134 @@ class Dataset:
         episode: dict,
         use_unixtime: bool = False,
         cutoff: float = None,
+        state: str = None,
     ) -> dict[str, pd.DataFrame]:
-        values = {}
-        for attribute in self.get_embodiment_attributes(type_, episode):
-            values[attribute["key"]] = self._load_embodiment_value(
-                attribute,
-                use_unixtime=use_unixtime,
-                cutoff=cutoff,
+        if state is not None and state not in STATE_REPRESENTATIONS:
+            raise ValueError(
+                f"Unknown state representation {state!r}: "
+                f"expected one of {STATE_REPRESENTATIONS}"
             )
+        values = {}
+        arm_states = {}
+        for attribute in self.get_embodiment_attributes(type_, episode):
+            df = self._load_embodiment_value(attribute, use_unixtime=use_unixtime)
+            if (
+                state is not None
+                and isinstance(attribute["embodiment"], OpenArm)
+                and attribute["name"] in ARM_STATE_ATTRIBUTES
+            ):
+                group = arm_states.setdefault(
+                    (attribute["embodiment"].name, attribute["component"]),
+                    {"embodiment": attribute["embodiment"], "frames": {}},
+                )
+                group["frames"][attribute["name"]] = df
+            else:
+                values[attribute["key"]] = df
+        for (name, component), group in arm_states.items():
+            values[f"{name}/{component}/{state}"] = self._represent_arm_state(
+                group["frames"],
+                state,
+                group["embodiment"],
+                type_,
+                episode,
+                component,
+                use_unixtime=use_unixtime,
+            )
+        if cutoff is not None:
+            values = {
+                key: _renormalize_orientation(
+                    self._apply_smoothing(df, cutoff=cutoff),
+                    key.rsplit("/", 1)[-1],
+                )
+                for key, df in values.items()
+            }
         return values
+
+    def _represent_arm_state(
+        self,
+        frames: dict[str, pd.DataFrame],
+        state: str,
+        embodiment,
+        type_: str,
+        episode: dict,
+        component: str,
+        use_unixtime: bool = False,
+    ) -> pd.DataFrame:
+        """Return one arm's state in the requested representation.
+
+        Recorded representations are returned as-is; missing ones are derived
+        on the fly (qpos to pose via FK, pose to qpos via IK, and rot6d from
+        the pose).
+        """
+        if state in frames:
+            return frames[state]
+        if state == "qpos":
+            pose = frames["pose"]
+            seed_qpos = self._ik_seed(
+                episode, embodiment.name, component, pose.index, use_unixtime
+            )
+            qpos, failures, unconverged = self._arm_engine(component).pose_to_qpos(
+                pose.to_numpy(dtype=np.float32), seed_qpos=seed_qpos
+            )
+            if failures or unconverged:
+                warnings.warn(
+                    f"IK for {type_} {embodiment.name}/{component} in episode "
+                    f"{episode['id']}: {failures} sample(s) failed (previous "
+                    f"solution reused), {unconverged} sample(s) did not reach "
+                    "the convergence tolerances (best effort kept)."
+                )
+            return pd.DataFrame(qpos, index=pose.index, columns=list(embodiment.joints))
+        # "pose" and "rot6d" need a pose trajectory.
+        if "pose" in frames:
+            index = frames["pose"].index
+            pose = frames["pose"].to_numpy(dtype=np.float32)
+        else:
+            qpos = frames["qpos"]
+            index = qpos.index
+            pose = self._arm_engine(component).qpos_to_pose(
+                qpos.to_numpy(dtype=np.float32)
+            )
+        if state == "pose":
+            return pd.DataFrame(pose, index=index, columns=list(POSE_JOINTS))
+        return pd.DataFrame(
+            _pose_to_rot6d(pose), index=index, columns=list(ROT6D_JOINTS)
+        )
+
+    def _arm_engine(self, component: str):
+        if self._kinematics is None:
+            from .kinematics import create_engines
+
+            self._kinematics = create_engines()
+        engine = self._kinematics.get(component)
+        if engine is None:
+            raise ValueError(f"No kinematics engine for arm component {component!r}")
+        return engine
+
+    def _ik_seed(
+        self,
+        episode: dict,
+        name: str,
+        component: str,
+        pose_index: pd.Index,
+        use_unixtime: bool,
+    ) -> np.ndarray | None:
+        """Return the recorded obs qpos row nearest the first pose timestamp."""
+        if len(pose_index) == 0:
+            return None
+        for attribute in self.get_embodiment_attributes("obs", episode):
+            if attribute["key"] != f"{name}/{component}/qpos":
+                continue
+            obs = self._load_embodiment_value(attribute, use_unixtime=use_unixtime)
+            if obs.empty:
+                return None
+            nearest = int(np.abs(obs.index - pose_index[0]).argmin())
+            return obs.to_numpy(dtype=np.float32)[nearest]
+        return None
 
     def _load_embodiment_value(
         self,
         attribute: dict,
         use_unixtime: bool = False,
-        cutoff: float = None,
     ) -> pd.DataFrame:
         df = pd.read_parquet(attribute["path"])
         if attribute["path"].name == "state.parquet":
@@ -441,8 +650,6 @@ class Dataset:
         if use_unixtime:
             df["timestamp"] = df["timestamp"].astype("int64") / 1e9
         df = df.set_index("timestamp")
-        if cutoff is not None:
-            df = self._apply_smoothing(df, cutoff=cutoff)
         return df
 
     def _apply_smoothing(

@@ -70,6 +70,14 @@ def main():
         default="dir",
         choices=["dir", "tar"],
     )
+    parser.add_argument(
+        "--state",
+        help="Arm state representation of the output dataset if the output "
+        "format is lerobot_v2.1, lerobot_v3.0 or gr00t. Converted on the fly "
+        "(qpos to pose via FK, pose to qpos via IK) when the dataset stores "
+        "the other representation (default: qpos)",
+        choices=["qpos", "pose", "rot6d"],
+    )
 
     args = parser.parse_args()
     write_kwargs = {"format": args.format}
@@ -78,7 +86,16 @@ def main():
         write_kwargs["smoothing_cutoff"] = args.smoothing_cutoff
         write_kwargs["train_split"] = args.train_split
         write_kwargs["success_only"] = args.success_only
+        # Fall back to the writers' qpos default when --state is not given.
+        if args.state is not None:
+            write_kwargs["state"] = args.state
     else:
+        if args.state is not None:
+            parser.error(
+                "--state applies only to the lerobot_v2.1, lerobot_v3.0 and "
+                "gr00t formats: the openarm format always stores the "
+                "recorded raw data"
+            )
         write_kwargs["camera_format"] = args.camera_format
 
     old_dataset = openarm_dataset.Dataset(args.input)
