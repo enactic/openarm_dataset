@@ -153,17 +153,6 @@ class Metadata:
         del equipment["follower"]
         return equipment
 
-    def save(self):
-        """Write this metadata back to the file it was loaded from.
-
-        Unlike write(), the dataset format version is preserved.
-        Unversioned datasets aren't supported.
-        """
-        if self.version is None:
-            raise ValueError("Can't save metadata of an unversioned dataset")
-        with open(self.path, "w") as f:
-            yaml.safe_dump(self.data, f)
-
     def write(self, output: str | os.PathLike, valid_only: bool = False):
         """Write this metadata as the latest OpenArm dataset format.
 

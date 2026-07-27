@@ -14,8 +14,6 @@
 
 """Validator for OpenArm Dataset."""
 
-from pyarrow.dataset import dataset
-
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -34,6 +32,8 @@ class Validator:
             on_error: Optional callable that is called with an error message
                 string for each validation error found. If ``None``, errors
                 are not reported.
+            update_metadata: If ``True``, the dataset metadata is updated with
+                the validation results. If ``False``, the metadata is not updated.
 
         """
         self._dataset = dataset
@@ -50,7 +50,8 @@ class Validator:
             if not episode_valid:
                 valid = False
         if self._update_metadata:
-            self._dataset.meta.save()
+            output = self._dataset.meta.path.parent
+            self._dataset.meta.write(output)
         return valid
 
     def _validate_episode(self, episode: Episode) -> bool:
