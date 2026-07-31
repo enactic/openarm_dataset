@@ -131,13 +131,14 @@ def _build_merged_episodes(
 
     for ds_idx, ds in enumerate(datasets):
         for ep in ds.meta.episodes:
-            merged_episodes.append(
-                {
-                    "id": str(len(merged_episodes)),
-                    "success": ep["success"],
-                    "task_index": task_index_maps[ds_idx][ep["task_index"]],
-                }
-            )
+            merged_episode = {
+                "id": str(len(merged_episodes)),
+                "success": ep["success"],
+                "task_index": task_index_maps[ds_idx][ep["task_index"]],
+            }
+            if "valid" in ep:
+                merged_episode["valid"] = ep["valid"]
+            merged_episodes.append(merged_episode)
 
     return merged_episodes
 

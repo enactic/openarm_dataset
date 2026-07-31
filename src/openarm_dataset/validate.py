@@ -29,9 +29,18 @@ def main():
         help="Path of an OpenArm dataset to validate",
         type=pathlib.Path,
     )
+    parser.add_argument(
+        "--no-update-metadata",
+        help="Do not record per-episode validity ('valid' flag) in the dataset metadata",
+        action="store_true",
+        default=False,
+    )
     args = parser.parse_args()
     dataset = openarm_dataset.Dataset(args.input)
-    valid = dataset.validate(on_error=lambda error: print(error, file=sys.stderr))
+    valid = dataset.validate(
+        on_error=lambda error: print(error, file=sys.stderr),
+        update_metadata=not args.no_update_metadata,
+    )
     if not valid:
         sys.exit(1)
 

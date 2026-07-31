@@ -568,6 +568,7 @@ def to_lerobotv30(
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
     state: str = "qpos",
+    valid_only: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v3.0 format.
 
@@ -585,7 +586,9 @@ def to_lerobotv30(
     # Identical for obs and action: both export the same uniform state
     # representation.
     keys, names = _collect_keys_and_joint_names(dataset, state)
-    records = _collect_downsampled_data(dataset, fps, keys, keys, success_only, state)
+    records = _collect_downsampled_data(
+        dataset, fps, keys, keys, success_only, state, valid_only
+    )
 
     if not records:
         raise ValueError("No episodes to write.")

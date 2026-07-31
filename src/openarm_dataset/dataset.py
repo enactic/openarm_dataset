@@ -20,8 +20,6 @@ import shutil
 import warnings
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pandas as pd
 import scipy.signal as signal
@@ -29,6 +27,7 @@ import scipy.signal as signal
 from .camera import Camera
 from .metadata import Metadata, OpenArm
 from .sampler import Sampler, Sample
+from .validator import Validator
 
 # Attributes that may appear as columns in a state.parquet file.
 STATE_ATTRIBUTES = ("qpos", "qvel", "qtorque", "pose")
@@ -149,66 +148,26 @@ class Dataset:
         """Set smoothing."""
         self._smoothing_cutoff = cutoff
 
-    def validate(self, on_error=None) -> bool:
+    def validate(self, on_error=None, update_metadata: bool = False) -> bool:
         """Validate this dataset.
 
         Args:
             on_error: Optional callable that is called with an error message
                 string for each validation error found. If ``None``, errors
                 are not reported.
+            update_metadata: If ``True``, the validation result is recorded
+                in the dataset metadata as a boolean ``valid`` flag per
+                episode. Ignored for unversioned datasets.
 
         Returns:
             ``True`` if the dataset is valid, ``False`` otherwise.
 
         """
-        valid = True
-        checked_paths = set()
-        for episode in self.meta.episodes:
-            for type_name in ("obs", "action"):
-                for attribute in self.get_embodiment_attributes(type_name, episode):
-                    path = attribute["path"]
-                    if path in checked_paths or not path.exists():
-                        continue
-                    checked_paths.add(path)
-                    file_meta = pq.read_metadata(path)
-                    has_null = False
-                    for rg_index in range(file_meta.num_row_groups):
-                        row_group = file_meta.row_group(rg_index)
-                        for col_index in range(row_group.num_columns):
-                            col_meta = row_group.column(col_index)
-                            col_name = col_meta.path_in_schema.split(".")[0]
-                            if col_name == "timestamp":
-                                continue
-                            stats = col_meta.statistics
-                            if (
-                                stats is not None
-                                and stats.has_null_count
-                                and stats.null_count > 0
-                            ):
-                                has_null = True
-                                break
-                        if has_null:
-                            break
-                    if not has_null:
-                        table = pq.read_table(path)
-                        for col_name in table.schema.names:
-                            if col_name == "timestamp":
-                                continue
-                            col = table.column(col_name)
-                            flat = col.combine_chunks().values
-                            if (
-                                pa.types.is_floating(flat.type)
-                                and pc.any(pc.is_nan(flat)).as_py()
-                            ):
-                                has_null = True
-                                break
-                    if has_null:
-                        if on_error is not None:
-                            on_error(
-                                f"{path.relative_to(self.root_path)}: "
-                                "includes null values"
-                            )
-                        valid = False
+        # The valid flag write feature is disabled for unversioned datasets.
+        if self.meta.version is None:
+            update_metadata = False
+        validator = Validator(self, on_error=on_error, update_metadata=update_metadata)
+        valid = validator.validate()
         return valid
 
     @property
@@ -671,11 +630,16 @@ class Dataset:
         filtered_values = signal.filtfilt(b, a, df.values, axis=0)
         return pd.DataFrame(filtered_values, index=df.index, columns=df.columns)
 
-    def _write(self, output: str | os.PathLike, camera_format: str = "dir"):
+    def _write(
+        self,
+        output: str | os.PathLike,
+        camera_format: str = "dir",
+        valid_only: bool = False,
+    ):
         """Write this dataset as the latest OpenArm dataset format."""
         output = Path(output)
-        self.meta.write(output)
-        self._write_data(output, camera_format=camera_format)
+        self.meta.write(output, valid_only=valid_only)
+        self._write_data(output, camera_format=camera_format, valid_only=valid_only)
 
     def write(self, output: str | os.PathLike, format: str | None = None, **options):
         """Write this dataset in the specified format."""
@@ -707,8 +671,12 @@ class Dataset:
         else:
             raise ValueError(f"Unsupported format: {format}")
 
-    def _write_data(self, output: Path, camera_format: str = "dir"):
+    def _write_data(
+        self, output: Path, camera_format: str = "dir", valid_only: bool = False
+    ):
         for episode in self.meta.episodes:
+            if valid_only and not episode.valid():
+                continue
             self._write_episode(output, episode, camera_format=camera_format)
 
     def _write_episode(self, output: Path, episode: dict, camera_format: str = "dir"):

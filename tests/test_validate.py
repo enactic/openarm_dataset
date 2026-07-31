@@ -17,9 +17,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-
 import pandas as pd
-
 from openarm_dataset.dataset import Dataset
 
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.3.0"
@@ -120,13 +118,30 @@ def test_validate_detects_nan_in_qpos(tmp_path):
     assert errors == ["episodes/0/obs/arms/left/state.parquet: includes null values"]
 
 
-def test_validate_cli_valid():
+def test_validate_update_metadata(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
+    _inject_null_qpos(state_path)
+
+    assert not Dataset(tmp_path).validate(update_metadata=True)
+    assert Dataset(tmp_path).meta.episodes == [
+        {"id": "0", "success": False, "task_index": 0, "valid": False},
+        {"id": "3", "success": True, "task_index": 0, "valid": True},
+    ]
+
+
+def test_validate_cli_valid(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     result = subprocess.run(
-        [sys.executable, "-m", "openarm_dataset.validate", str(DATASET_DIR)],
+        [sys.executable, "-m", "openarm_dataset.validate", str(tmp_path)],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0
+    assert Dataset(tmp_path).meta.episodes == [
+        {"id": "0", "success": False, "task_index": 0, "valid": True},
+        {"id": "3", "success": True, "task_index": 0, "valid": True},
+    ]
 
 
 def test_validate_cli_invalid(tmp_path):
@@ -143,6 +158,29 @@ def test_validate_cli_invalid(tmp_path):
     assert result.stderr == (
         "episodes/0/obs/arms/left/state.parquet: includes null values\n"
     )
+    assert Dataset(tmp_path).meta.episodes == [
+        {"id": "0", "success": False, "task_index": 0, "valid": False},
+        {"id": "3", "success": True, "task_index": 0, "valid": True},
+    ]
+
+
+def test_validate_cli_no_update_metadata(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    metadata_yaml = (tmp_path / "metadata.yaml").read_text()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openarm_dataset.validate",
+            str(tmp_path),
+            "--no-update-metadata",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert (tmp_path / "metadata.yaml").read_text() == metadata_yaml
 
 
 POSE_DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"

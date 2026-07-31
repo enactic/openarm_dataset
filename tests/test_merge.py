@@ -56,6 +56,20 @@ def test_merge_two_datasets(dataset_a, dataset_b, tmp_path):
         assert (output / "episodes" / str(i)).is_dir()
 
 
+def test_merge_preserves_valid_flags(dataset_a, dataset_b, tmp_path):
+    meta_a = _load_meta(dataset_a)
+    for episode, valid in zip(meta_a["episodes"], (False, True)):
+        episode["valid"] = valid
+    with open(dataset_a / "metadata.yaml", "w") as f:
+        yaml.safe_dump(meta_a, f)
+
+    output = tmp_path / "merged"
+    merge_datasets([dataset_a, dataset_b], output)
+
+    meta = _load_meta(output)
+    assert [ep.get("valid") for ep in meta["episodes"]] == [False, True, None, None]
+
+
 def test_merge_preserves_metadata_from_first_dataset(dataset_a, dataset_b, tmp_path):
     meta_a = _load_meta(dataset_a)
     output = tmp_path / "merged"

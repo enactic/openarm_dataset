@@ -109,11 +109,19 @@ def _collect_keys_and_joint_names(dataset: Dataset, state: str):
 
 
 def _collect_downsampled_data(
-    dataset: Dataset, fps: int, obs_keys, action_keys, success_only=False, state=None
+    dataset: Dataset,
+    fps: int,
+    obs_keys,
+    action_keys,
+    success_only=False,
+    state=None,
+    valid_only=False,
 ):
     records = []
     for episode_index, episode in enumerate(dataset.meta.episodes):
         if not episode["success"] and success_only:
+            continue
+        if valid_only and not episode.valid():
             continue
         samples = dataset.sample(hz=fps, episode=episode, state=state)
         num_frames = len(samples)
@@ -668,6 +676,7 @@ def to_lerobotv21(
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
     state: str = "qpos",
+    valid_only: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory.
 
@@ -690,7 +699,9 @@ def to_lerobotv21(
     keys, names = _collect_keys_and_joint_names(dataset, state)
 
     # collect downsampled data for each episode
-    records = _collect_downsampled_data(dataset, fps, keys, keys, success_only, state)
+    records = _collect_downsampled_data(
+        dataset, fps, keys, keys, success_only, state, valid_only
+    )
 
     if not records:
         raise ValueError("No episodes to write.")
@@ -726,6 +737,7 @@ def to_gr00t(
     smoothing_cutoff: float = 1.0,
     success_only: bool = False,
     state: str = "qpos",
+    valid_only: bool = False,
 ) -> None:
     """Convert the given dataset to GR00T LeRobot format.
 
@@ -742,5 +754,6 @@ def to_gr00t(
         smoothing_cutoff=smoothing_cutoff,
         success_only=success_only,
         state=state,
+        valid_only=valid_only,
     )
     _write_modality_json(dataset, output_dir, state)
