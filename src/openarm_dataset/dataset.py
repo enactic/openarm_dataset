@@ -148,7 +148,14 @@ class Dataset:
         """Set smoothing."""
         self._smoothing_cutoff = cutoff
 
-    def validate(self, on_error=None, update_metadata: bool = False) -> bool:
+    def validate(
+        self,
+        on_error=None,
+        update_metadata: bool = False,
+        qpos_jump_threshold: float = None,
+        qpos_absmax: float = None,
+        min_duration: float = None,
+    ) -> bool:
         """Validate this dataset.
 
         Args:
@@ -158,6 +165,12 @@ class Dataset:
             update_metadata: If ``True``, the validation result is recorded
                 in the dataset metadata as a boolean ``valid`` flag per
                 episode. Ignored for unversioned datasets.
+            qpos_jump_threshold: If set, flag qpos frame-to-frame deltas above
+                this value (radians) as abrupt jumps.
+            qpos_absmax: If set, flag qpos values whose absolute value
+                exceeds this threshold (radians).
+            min_duration: If set, flag episodes whose duration is shorter
+                than this value (seconds).
 
         Returns:
             ``True`` if the dataset is valid, ``False`` otherwise.
@@ -166,7 +179,14 @@ class Dataset:
         # The valid flag write feature is disabled for unversioned datasets.
         if self.meta.version is None:
             update_metadata = False
-        validator = Validator(self, on_error=on_error, update_metadata=update_metadata)
+        validator = Validator(
+            self,
+            on_error=on_error,
+            update_metadata=update_metadata,
+            qpos_jump_threshold=qpos_jump_threshold,
+            qpos_absmax=qpos_absmax,
+            min_duration=min_duration,
+        )
         valid = validator.validate()
         return valid
 

@@ -165,8 +165,20 @@ Validate a dataset:
 
 ```bash
 openarm-dataset-validate <input> \
-    [--no-update-metadata]  # do not record per-episode validity in the metadata
+    [--no-update-metadata]         # do not record per-episode validity in the metadata
+    [--qpos-jump-threshold RADIAN] # default 1.0
+    [--qpos-absmax RADIAN]         # default 6.28
+    [--min-duration SECOND]        # default 2.0
 ```
+
+Every episode is checked for `null` and `NaN` values. In addition,
+`--qpos-absmax` flags `qpos` values whose absolute value exceeds the
+threshold, `--qpos-jump-threshold` flags `qpos` frame-to-frame deltas above
+the threshold as abrupt jumps, and `--min-duration` flags episodes shorter
+than the given duration. The three thresholds are checked against the
+recorded values (smoothing is not applied) and each is disabled by passing
+`none`, e.g. `--min-duration none`. Files that include `null` or `NaN` are
+reported but not checked against the `qpos` thresholds.
 
 Exits with status `1` if any errors are reported. The result is also recorded
 per episode as a boolean `valid` flag in `metadata.yaml` unless
