@@ -44,6 +44,7 @@ frequencies:
       left: 250.0
       right: 250.0
     lifter: 250.0
+leader_device_type: OpenArmKER
 location: Test
 operation_type: teleop
 operator: Tester

@@ -83,6 +83,19 @@ def test_merge_preserves_metadata_from_first_dataset(dataset_a, dataset_b, tmp_p
     assert meta["frequencies"] == meta_a["frequencies"]
 
 
+def test_merge_preserves_leader_device_type(tmp_path):
+    dataset_a = tmp_path / "dataset_a"
+    dataset_b = tmp_path / "dataset_b"
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_a)
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_b)
+
+    output = tmp_path / "merged"
+    merge_datasets([dataset_a, dataset_b], output)
+
+    meta = _load_meta(output)
+    assert meta["leader_device_type"] == "OpenArmKER"
+
+
 def test_merge_episode_data_copied(dataset_a, dataset_b, tmp_path):
     output = tmp_path / "merged"
     merge_datasets([dataset_a, dataset_b], output)

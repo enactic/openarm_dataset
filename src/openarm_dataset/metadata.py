@@ -94,6 +94,17 @@ class Metadata:
         return self.data.get("operator")
 
     @property
+    def leader_device_type(self) -> str | None:
+        """Get leader device type.
+
+        The teleoperation input device used to record the episode (e.g.
+        ``"OpenArmKER"`` or a VR controller), as distinct from the
+        ``operator`` who used it. ``None`` for datasets recorded before
+        this field existed.
+        """
+        return self.data.get("leader_device_type")
+
+    @property
     def operation_type(self) -> str:
         """Get operation type."""
         return self.data.get("operation_type", "teleop")

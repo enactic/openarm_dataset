@@ -31,6 +31,11 @@ def test_operator():
     assert meta.operator == "Tester"
 
 
+def test_leader_device_type():
+    meta = Metadata(METADATA_PATH)
+    assert meta.leader_device_type is None
+
+
 def test_operation_type():
     meta = Metadata(METADATA_PATH)
     assert meta.operation_type == "teleop"
