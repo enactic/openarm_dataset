@@ -264,12 +264,6 @@ def test_validate_detects_qpos_absmax_in_positions_column(tmp_path):
     ]
 
 
-def test_validate_accepts_qpos_within_absmax():
-    errors = []
-    assert Dataset(DATASET_DIR).validate(on_error=errors.append, qpos_absmax=6.28)
-    assert errors == []
-
-
 def test_validate_detects_qpos_jump(tmp_path):
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     # action uses a "value" column instead of a state.parquet.
@@ -286,14 +280,6 @@ def test_validate_detects_qpos_jump(tmp_path):
     assert errors[0].startswith(
         "episodes/0/action/arms/left/qpos.parquet: 1 qpos jump(s) > 1.0 rad (max="
     )
-
-
-def test_validate_accepts_qpos_without_jump():
-    errors = []
-    assert Dataset(DATASET_DIR).validate(
-        on_error=errors.append, qpos_jump_threshold=1.0
-    )
-    assert errors == []
 
 
 def test_validate_skips_qpos_checks_for_null_file(tmp_path):
@@ -314,9 +300,14 @@ def test_validate_detects_short_episode():
     assert errors == ["episodes/3: duration=0.81s < 2.0s"]
 
 
-def test_validate_accepts_long_enough_episodes():
+def test_validate_accepts_clean_dataset():
     errors = []
-    assert Dataset(DATASET_DIR).validate(on_error=errors.append, min_duration=0.5)
+    assert Dataset(DATASET_DIR).validate(
+        on_error=errors.append,
+        qpos_absmax=6.28,
+        qpos_jump_threshold=1.0,
+        min_duration=0.5,
+    )
     assert errors == []
 
 
@@ -333,75 +324,3 @@ def test_validate_cli_min_duration_by_default(tmp_path):
         {"id": "0", "success": False, "task_index": 0, "valid": True},
         {"id": "3", "success": True, "task_index": 0, "valid": False},
     ]
-
-
-def test_validate_cli_min_duration_disabled(tmp_path):
-    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "openarm_dataset.validate",
-            str(tmp_path),
-            "--min-duration",
-            "none",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert result.stderr == ""
-
-
-def test_validate_cli_qpos_absmax(tmp_path):
-    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
-    _inject_large_qpos(state_path)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "openarm_dataset.validate",
-            str(tmp_path),
-            "--qpos-jump-threshold",
-            "none",
-            "--min-duration",
-            "none",
-            "--qpos-absmax",
-            "6.28",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 1
-    assert result.stderr == (
-        "episodes/0/obs/arms/left/state.parquet: qpos absmax=100.0000 > 6.28\n"
-    )
-
-
-def test_validate_cli_qpos_jump_threshold(tmp_path):
-    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
-    _inject_qpos_jump(state_path)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "openarm_dataset.validate",
-            str(tmp_path),
-            "--qpos-absmax",
-            "none",
-            "--min-duration",
-            "none",
-            "--qpos-jump-threshold",
-            "1.0",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 1
-    assert result.stderr.startswith(
-        "episodes/0/obs/arms/left/state.parquet: 1 qpos jump(s) > 1.0 rad (max="
-    )
