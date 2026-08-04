@@ -136,12 +136,8 @@ class Metadata:
         equipment = copy.deepcopy(self.data["equipment"])
         equipment["id"] = equipment.pop("equipment_id")
         equipment["version"] = equipment.pop("equipment_version")
-        # `leader` here is the unversioned format's description of the leader
-        # *arms* (their joints, dtypes and shapes), not the `equipment.leader`
-        # of v0.4.0, which names the teleoperation device. Same key, different
-        # meaning: the arms are folded into `embodiments` below and the key is
-        # dropped, so an unversioned dataset reports no leader device rather
-        # than a nonsensical one.
+        # Same key, different field: `leader` here describes the leader arms,
+        # not the teleoperation device of v0.4.0's `equipment.leader`.
         openarm_version = equipment["leader"]["arms"]["right_arm"]["hardware_version"]
         equipment["embodiments"] = {
             "arms": {
@@ -199,9 +195,8 @@ class Equipment:
         self._data = data
         self.embodiments = Embodiments(self._data["embodiments"])
         self.perceptions = Perceptions(self._data["perceptions"])
-        # Absent for rollouts, and for teleop sessions recorded before the
-        # recorder reported the device — hence `.get`, and an empty Leader
-        # rather than None, so callers can iterate without a guard.
+        # Often absent, so an empty Leader rather than None: callers iterate
+        # without a guard.
         self.leader = Leader(self._data.get("leader") or {})
 
     @property
@@ -251,8 +246,8 @@ class Embodiments(Mapping):
 class Leader(Mapping):
     """Metadata for the teleoperation leader devices.
 
-    The devices the operator drove, keyed by kind, as the recorder writes
-    them under ``equipment.leader``::
+    The devices the operator drove, keyed by kind, as written under
+    ``equipment.leader``::
 
         equipment:
           leader:
@@ -261,14 +256,10 @@ class Leader(Mapping):
               firmware_version: "1.2.3"
               hardware_version: "1.0"
 
-    This is the input side of a teleoperation session, as distinct from
-    ``embodiments`` (the arms being driven) and from ``operator`` (the person
-    driving). Empty when nothing recorded a leader: rollouts have none, and
-    neither do teleop sessions from before the recorder reported it.
-
-    Unlike ``Embodiments``, an unrecognized ``id`` is not an error — the
-    device is a label plus its versions, and a rig this library has never
-    heard of is still worth reading back.
+    The input side of a teleoperation session, as distinct from
+    ``embodiments`` (the arms driven) and ``operator`` (the person driving).
+    Empty when nothing recorded a leader. Unlike ``Embodiments``, an
+    unrecognized ``id`` is not an error: a device is a label and its versions.
     """
 
     def __init__(self, data: dict):
@@ -307,12 +298,12 @@ class LeaderDevice:
 
     @property
     def firmware_version(self) -> str | None:
-        """Get firmware version. None when the device did not report one."""
+        """Get firmware version, if the device reported one."""
         return self._data.get("firmware_version")
 
     @property
     def hardware_version(self) -> str | None:
-        """Get hardware version. None when the device did not report one."""
+        """Get hardware version, if the device reported one."""
         return self._data.get("hardware_version")
 
 

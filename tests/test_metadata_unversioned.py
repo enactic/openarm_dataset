@@ -32,9 +32,8 @@ def test_operator():
 
 
 def test_no_leader_device():
-    # The unversioned format has its own `equipment.leader`, describing the
-    # leader arms rather than the teleoperation device. It is not mistaken
-    # for one.
+    # This format's own `equipment.leader` describes the leader arms, and is
+    # not mistaken for a teleoperation device.
     meta = Metadata(METADATA_PATH)
     assert dict(meta.equipment.leader) == {}
 
