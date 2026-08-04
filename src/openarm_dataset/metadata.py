@@ -94,17 +94,6 @@ class Metadata:
         return self.data.get("operator")
 
     @property
-    def leader_device_type(self) -> str | None:
-        """Get leader device type.
-
-        The teleoperation input device used to record the episode (e.g.
-        ``"OpenArmKER"`` or a VR controller), as distinct from the
-        ``operator`` who used it. ``None`` for datasets recorded before
-        this field existed.
-        """
-        return self.data.get("leader_device_type")
-
-    @property
     def operation_type(self) -> str:
         """Get operation type."""
         return self.data.get("operation_type", "teleop")
@@ -147,6 +136,12 @@ class Metadata:
         equipment = copy.deepcopy(self.data["equipment"])
         equipment["id"] = equipment.pop("equipment_id")
         equipment["version"] = equipment.pop("equipment_version")
+        # `leader` here is the unversioned format's description of the leader
+        # *arms* (their joints, dtypes and shapes), not the `equipment.leader`
+        # of v0.4.0, which names the teleoperation device. Same key, different
+        # meaning: the arms are folded into `embodiments` below and the key is
+        # dropped, so an unversioned dataset reports no leader device rather
+        # than a nonsensical one.
         openarm_version = equipment["leader"]["arms"]["right_arm"]["hardware_version"]
         equipment["embodiments"] = {
             "arms": {
@@ -204,6 +199,10 @@ class Equipment:
         self._data = data
         self.embodiments = Embodiments(self._data["embodiments"])
         self.perceptions = Perceptions(self._data["perceptions"])
+        # Absent for rollouts, and for teleop sessions recorded before the
+        # recorder reported the device — hence `.get`, and an empty Leader
+        # rather than None, so callers can iterate without a guard.
+        self.leader = Leader(self._data.get("leader") or {})
 
     @property
     def id(self) -> str:
@@ -247,6 +246,74 @@ class Embodiments(Mapping):
             return OpenArmCellLifter(name, data)
         else:
             raise ValueError(f"Invalid embodiment id: {id_}")
+
+
+class Leader(Mapping):
+    """Metadata for the teleoperation leader devices.
+
+    The devices the operator drove, keyed by kind, as the recorder writes
+    them under ``equipment.leader``::
+
+        equipment:
+          leader:
+            ker:
+              id: OpenArmKER
+              firmware_version: "1.2.3"
+              hardware_version: "1.0"
+
+    This is the input side of a teleoperation session, as distinct from
+    ``embodiments`` (the arms being driven) and from ``operator`` (the person
+    driving). Empty when nothing recorded a leader: rollouts have none, and
+    neither do teleop sessions from before the recorder reported it.
+
+    Unlike ``Embodiments``, an unrecognized ``id`` is not an error — the
+    device is a label plus its versions, and a rig this library has never
+    heard of is still worth reading back.
+    """
+
+    def __init__(self, data: dict):
+        """Initialize Leader."""
+        self._data = data
+        self.devices = {
+            kind: LeaderDevice(kind, device_data)
+            for kind, device_data in self._data.items()
+        }
+
+    def __getitem__(self, key):
+        """Return the device for the key."""
+        return self.devices[key]
+
+    def __iter__(self):
+        """Return iterator."""
+        return iter(self.devices)
+
+    def __len__(self):
+        """Return number of devices."""
+        return len(self.devices)
+
+
+class LeaderDevice:
+    """Metadata for one teleoperation leader device."""
+
+    def __init__(self, kind: str, data: dict):
+        """Initialize LeaderDevice."""
+        self.kind = kind
+        self._data = data
+
+    @property
+    def id(self) -> str | None:
+        """Get id, e.g. ``"OpenArmKER"``."""
+        return self._data.get("id")
+
+    @property
+    def firmware_version(self) -> str | None:
+        """Get firmware version. None when the device did not report one."""
+        return self._data.get("firmware_version")
+
+    @property
+    def hardware_version(self) -> str | None:
+        """Get hardware version. None when the device did not report one."""
+        return self._data.get("hardware_version")
 
 
 class Perceptions:

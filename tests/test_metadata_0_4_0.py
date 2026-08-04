@@ -21,13 +21,30 @@ METADATA_PATH = (
 )
 
 
-def test_leader_device_type():
+def test_leader_device():
     meta = Metadata(METADATA_PATH)
-    assert meta.leader_device_type == "OpenArmKER"
+    leader = meta.equipment.leader
+    assert list(leader) == ["ker"]
+    ker = leader["ker"]
+    assert ker.kind == "ker"
+    assert ker.id == "OpenArmKER"
+    assert ker.firmware_version == "1.2.3"
+    assert ker.hardware_version == "1.0"
 
 
-def test_leader_device_type_missing():
+def test_leader_device_missing():
     meta = Metadata(
         Path(__file__).parent / "fixture" / "dataset_0.3.0" / "metadata.yaml"
     )
-    assert meta.leader_device_type is None
+    assert dict(meta.equipment.leader) == {}
+
+
+def test_leader_device_without_versions():
+    # A device that reports no firmware/hardware version still reads back;
+    # only the versions are missing.
+    meta = Metadata(METADATA_PATH)
+    meta.data["equipment"]["leader"] = {"vr": {"id": "VR-Quest"}}
+    vr = meta.equipment.leader["vr"]
+    assert vr.id == "VR-Quest"
+    assert vr.firmware_version is None
+    assert vr.hardware_version is None

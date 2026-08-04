@@ -29,9 +29,9 @@ def test_operator():
     assert meta.operator == "Tester"
 
 
-def test_leader_device_type():
+def test_no_leader_device():
     meta = Metadata(METADATA_PATH)
-    assert meta.leader_device_type is None
+    assert dict(meta.equipment.leader) == {}
 
 
 def test_operation_type():
