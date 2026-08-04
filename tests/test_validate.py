@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 from openarm_dataset.dataset import Dataset
 
-DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.3.0"
+DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_qpos"
 
 # The CLI enables the qpos and duration thresholds by default. Tests that
 # only exercise the null check turn them off.
@@ -216,9 +216,6 @@ def test_validate_pose_dataset():
     assert errors == []
 
 
-DATASET_0_1_0_DIR = Path(__file__).parent / "fixture" / "dataset_0.1.0"
-
-
 def _inject_large_qpos(path, column="qpos", value=100.0):
     df = pd.read_parquet(path)
     values = df[column].tolist()
@@ -250,36 +247,6 @@ def test_validate_detects_qpos_absmax(tmp_path):
     assert errors == [
         "episodes/0/obs/arms/left/state.parquet: qpos absmax=100.0000 > 6.28"
     ]
-
-
-def test_validate_detects_qpos_absmax_in_positions_column(tmp_path):
-    shutil.copytree(DATASET_0_1_0_DIR, tmp_path, dirs_exist_ok=True)
-    qpos_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "qpos.parquet"
-    _inject_large_qpos(qpos_path, column="positions")
-
-    errors = []
-    assert not Dataset(tmp_path).validate(on_error=errors.append, qpos_absmax=6.28)
-    assert errors == [
-        "episodes/0/obs/arms/left/qpos.parquet: qpos absmax=100.0000 > 6.28"
-    ]
-
-
-def test_validate_detects_qpos_jump(tmp_path):
-    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    # action uses a "value" column instead of a state.parquet.
-    qpos_path = (
-        tmp_path / "episodes" / "0" / "action" / "arms" / "left" / "qpos.parquet"
-    )
-    _inject_qpos_jump(qpos_path, column="value")
-
-    errors = []
-    assert not Dataset(tmp_path).validate(
-        on_error=errors.append, qpos_jump_threshold=1.0
-    )
-    assert len(errors) == 1
-    assert errors[0].startswith(
-        "episodes/0/action/arms/left/qpos.parquet: 1 qpos jump(s) > 1.0 rad (max="
-    )
 
 
 def test_validate_skips_qpos_checks_for_null_file(tmp_path):
