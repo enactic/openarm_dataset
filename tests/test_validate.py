@@ -276,4 +276,3 @@ def test_validate_accepts_clean_dataset():
         min_duration=0.5,
     )
     assert errors == []
-
