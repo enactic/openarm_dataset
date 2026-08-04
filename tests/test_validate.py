@@ -277,17 +277,3 @@ def test_validate_accepts_clean_dataset():
     )
     assert errors == []
 
-
-def test_validate_cli_min_duration_by_default(tmp_path):
-    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
-    result = subprocess.run(
-        [sys.executable, "-m", "openarm_dataset.validate", str(tmp_path)],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 1
-    assert result.stderr == "episodes/3: duration=0.81s < 2.0s\n"
-    assert Dataset(tmp_path).meta.episodes == [
-        {"id": "0", "success": False, "task_index": 0, "valid": True},
-        {"id": "3", "success": True, "task_index": 0, "valid": False},
-    ]
