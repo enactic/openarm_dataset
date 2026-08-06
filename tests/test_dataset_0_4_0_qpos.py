@@ -122,6 +122,7 @@ def test_write_round_trip(dataset, tmp_path):
     dataset.write(output)
     meta = yaml.safe_load((output / "metadata.yaml").read_text())
     assert meta["version"] == "0.4.0"
+    assert meta["equipment"]["leader"]["ker"]["id"] == "OpenArmKER"
     rewritten = Dataset(output)
     action = rewritten.load_action(rewritten.meta.episodes[0])
     assert set(action) == ARM_ACTION_KEYS | {"lifter/elevation"}

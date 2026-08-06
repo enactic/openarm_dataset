@@ -31,6 +31,13 @@ def test_operator():
     assert meta.operator == "Tester"
 
 
+def test_no_leader_device():
+    # This format's own `equipment.leader` describes the leader arms, and is
+    # not mistaken for a teleoperation device.
+    meta = Metadata(METADATA_PATH)
+    assert dict(meta.equipment.leader) == {}
+
+
 def test_operation_type():
     meta = Metadata(METADATA_PATH)
     assert meta.operation_type == "teleop"

@@ -83,6 +83,42 @@ def test_merge_preserves_metadata_from_first_dataset(dataset_a, dataset_b, tmp_p
     assert meta["frequencies"] == meta_a["frequencies"]
 
 
+def test_merge_preserves_leader_device(tmp_path):
+    dataset_a = tmp_path / "dataset_a"
+    dataset_b = tmp_path / "dataset_b"
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_a)
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_b)
+
+    output = tmp_path / "merged"
+    merge_datasets([dataset_a, dataset_b], output)
+
+    meta = _load_meta(output)
+    assert meta["equipment"]["leader"] == {
+        "ker": {
+            "id": "OpenArmKER",
+            "firmware_version": "1.2.3",
+            "hardware_version": "1.0",
+        }
+    }
+
+
+def test_merge_rejects_different_leader_devices(tmp_path):
+    # The leader device lives in `equipment`, so datasets recorded on
+    # different rigs (or on the same rig across a firmware change) are
+    # refused rather than silently merged under dataset 0's device.
+    dataset_a = tmp_path / "dataset_a"
+    dataset_b = tmp_path / "dataset_b"
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_a)
+    shutil.copytree(QPOS_FIXTURE_DIR, dataset_b)
+    meta_path = dataset_b / "metadata.yaml"
+    meta = yaml.safe_load(meta_path.read_text())
+    meta["equipment"]["leader"]["ker"]["firmware_version"] = "1.3.0"
+    meta_path.write_text(yaml.safe_dump(meta))
+
+    with pytest.raises(MergeError, match="equipment"):
+        merge_datasets([dataset_a, dataset_b], tmp_path / "merged")
+
+
 def test_merge_episode_data_copied(dataset_a, dataset_b, tmp_path):
     output = tmp_path / "merged"
     merge_datasets([dataset_a, dataset_b], output)

@@ -136,6 +136,8 @@ class Metadata:
         equipment = copy.deepcopy(self.data["equipment"])
         equipment["id"] = equipment.pop("equipment_id")
         equipment["version"] = equipment.pop("equipment_version")
+        # Same key, different field: `leader` here describes the leader arms,
+        # not the teleoperation device of v0.4.0's `equipment.leader`.
         openarm_version = equipment["leader"]["arms"]["right_arm"]["hardware_version"]
         equipment["embodiments"] = {
             "arms": {
@@ -193,6 +195,9 @@ class Equipment:
         self._data = data
         self.embodiments = Embodiments(self._data["embodiments"])
         self.perceptions = Perceptions(self._data["perceptions"])
+        # Often absent, so an empty Leader rather than None: callers iterate
+        # without a guard.
+        self.leader = Leader(self._data.get("leader") or {})
 
     @property
     def id(self) -> str:
@@ -236,6 +241,70 @@ class Embodiments(Mapping):
             return OpenArmCellLifter(name, data)
         else:
             raise ValueError(f"Invalid embodiment id: {id_}")
+
+
+class Leader(Mapping):
+    """Metadata for the teleoperation leader devices.
+
+    The devices the operator drove, keyed by kind, as written under
+    ``equipment.leader``::
+
+        equipment:
+          leader:
+            ker:
+              id: OpenArmKER
+              firmware_version: "1.2.3"
+              hardware_version: "1.0"
+
+    The input side of a teleoperation session, as distinct from
+    ``embodiments`` (the arms driven) and ``operator`` (the person driving).
+    Empty when nothing recorded a leader. Unlike ``Embodiments``, an
+    unrecognized ``id`` is not an error: a device is a label and its versions.
+    """
+
+    def __init__(self, data: dict):
+        """Initialize Leader."""
+        self._data = data
+        self.devices = {
+            kind: LeaderDevice(kind, device_data)
+            for kind, device_data in self._data.items()
+        }
+
+    def __getitem__(self, key):
+        """Return the device for the key."""
+        return self.devices[key]
+
+    def __iter__(self):
+        """Return iterator."""
+        return iter(self.devices)
+
+    def __len__(self):
+        """Return number of devices."""
+        return len(self.devices)
+
+
+class LeaderDevice:
+    """Metadata for one teleoperation leader device."""
+
+    def __init__(self, kind: str, data: dict):
+        """Initialize LeaderDevice."""
+        self.kind = kind
+        self._data = data
+
+    @property
+    def id(self) -> str | None:
+        """Get id, e.g. ``"OpenArmKER"``."""
+        return self._data.get("id")
+
+    @property
+    def firmware_version(self) -> str | None:
+        """Get firmware version, if the device reported one."""
+        return self._data.get("firmware_version")
+
+    @property
+    def hardware_version(self) -> str | None:
+        """Get hardware version, if the device reported one."""
+        return self._data.get("hardware_version")
 
 
 class Perceptions:
