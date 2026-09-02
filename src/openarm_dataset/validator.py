@@ -22,25 +22,6 @@ import pyarrow.parquet as pq
 from .metadata import Episode
 
 
-def _read_values(attribute: dict) -> np.ndarray:
-    """Read one attribute as a 2-D array of frames by joints."""
-    path = attribute["path"]
-    table = pq.read_table(path)
-    if path.name == "state.parquet":
-        column_name = attribute["name"]
-    elif "positions" in table.schema.names:
-        # No version and 0.1.0 use "positions".
-        column_name = "positions"
-    else:
-        column_name = "value"
-    column = table.column(column_name).combine_chunks()
-    flat = column.values.to_numpy(zero_copy_only=False)
-    if len(column) == 0 or len(flat) % len(column) != 0:
-        # Empty, or frames of differing lengths: nothing comparable to read.
-        return np.empty((0, 0))
-    return flat.reshape(len(column), -1)
-
-
 class Validator:
     """Validator for OpenArm Dataset."""
 
@@ -145,7 +126,7 @@ class Validator:
                     continue
                 # Read the recorded values, not the smoothed ones: smoothing
                 # is what would hide the anomalies we are looking for.
-                values = _read_values(attribute)
+                values = self._dataset.load_embodiment_value(attribute).to_numpy()
                 if self._qpos_absmax is not None and len(values) > 0:
                     absmax = np.abs(values).max()
                     if absmax > self._qpos_absmax:
