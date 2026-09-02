@@ -148,7 +148,14 @@ class Dataset:
         """Set smoothing."""
         self._smoothing_cutoff = cutoff
 
-    def validate(self, on_error=None, update_metadata: bool = False) -> bool:
+    def validate(
+        self,
+        on_error=None,
+        update_metadata: bool = False,
+        qpos_jump_threshold: float | None = None,
+        qpos_absmax: float | None = None,
+        min_duration: float | None = None,
+    ) -> bool:
         """Validate this dataset.
 
         Args:
@@ -158,6 +165,12 @@ class Dataset:
             update_metadata: If ``True``, the validation result is recorded
                 in the dataset metadata as a boolean ``valid`` flag per
                 episode. Ignored for unversioned datasets.
+            qpos_jump_threshold: If set, flag qpos frame-to-frame deltas above
+                this value (radians) as abrupt jumps.
+            qpos_absmax: If set, flag qpos values whose absolute value
+                exceeds this threshold (radians).
+            min_duration: If set, flag episodes whose duration is shorter
+                than this value (seconds).
 
         Returns:
             ``True`` if the dataset is valid, ``False`` otherwise.
@@ -166,7 +179,14 @@ class Dataset:
         # The valid flag write feature is disabled for unversioned datasets.
         if self.meta.version is None:
             update_metadata = False
-        validator = Validator(self, on_error=on_error, update_metadata=update_metadata)
+        validator = Validator(
+            self,
+            on_error=on_error,
+            update_metadata=update_metadata,
+            qpos_jump_threshold=qpos_jump_threshold,
+            qpos_absmax=qpos_absmax,
+            min_duration=min_duration,
+        )
         valid = validator.validate()
         return valid
 
@@ -467,7 +487,7 @@ class Dataset:
         values = {}
         arm_states = {}
         for attribute in self.get_embodiment_attributes(type_, episode):
-            df = self._load_embodiment_value(attribute, use_unixtime=use_unixtime)
+            df = self.load_embodiment_value(attribute, use_unixtime=use_unixtime)
             if (
                 state is not None
                 and isinstance(attribute["embodiment"], OpenArm)
@@ -574,18 +594,30 @@ class Dataset:
         for attribute in self.get_embodiment_attributes("obs", episode):
             if attribute["key"] != f"{name}/{component}/qpos":
                 continue
-            obs = self._load_embodiment_value(attribute, use_unixtime=use_unixtime)
+            obs = self.load_embodiment_value(attribute, use_unixtime=use_unixtime)
             if obs.empty:
                 return None
             nearest = int(np.abs(obs.index - pose_index[0]).argmin())
             return obs.to_numpy(dtype=np.float32)[nearest]
         return None
 
-    def _load_embodiment_value(
+    def load_embodiment_value(
         self,
         attribute: dict,
         use_unixtime: bool = False,
     ) -> pd.DataFrame:
+        """Load one embodiment attribute as recorded.
+
+        Args:
+            attribute: An entry returned by ``get_embodiment_attributes``.
+            use_unixtime: If True, the DataFrame index is returned as Unix time
+                (float64) instead of datetime64[ns].
+
+        Returns:
+            DataFrame indexed by timestamp with one column per joint. No
+            smoothing or state conversion is applied.
+
+        """
         df = pd.read_parquet(attribute["path"])
         if attribute["path"].name == "state.parquet":
             column_name = attribute["name"]
@@ -601,9 +633,11 @@ class Dataset:
             joints = POSE_JOINTS
         else:
             joints = attribute["embodiment"].joints
+        # columns= keeps the joint columns for an empty frame too.
         df[list(joints)] = pd.DataFrame(
             df[column_name].tolist(),
             index=df.index,
+            columns=list(joints),
         )
         df = df.drop(columns=drop_columns)
         if use_unixtime:

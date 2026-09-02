@@ -82,9 +82,12 @@ derived from the pose:
 Recorded `pose` data must be end-effector poses in the MuJoCo model's world
 frame (the openarm_control Cartesian-teleop convention); the kinematics use
 the model at its home keyframe, and time-varying lifter elevation is not
-folded in. Pass `kinematics=` to `Dataset` to override the engines built
-with `openarm_dataset.kinematics.create_engines()` (e.g. for a different
-scene or IK tolerances).
+folded in. The IK runs with openarm_control's real-time teleoperation
+shaping (bounded per-solve motion, singularity braking, nullspace home
+regulation) disabled so that every recorded pose is solved to convergence.
+Pass `kinematics=` to `Dataset` to override the engines built with
+`openarm_dataset.kinematics.create_engines()` (e.g. for a different scene
+or IK tolerances).
 
 Camera:
 
@@ -165,8 +168,20 @@ Validate a dataset:
 
 ```bash
 openarm-dataset-validate <input> \
-    [--no-update-metadata]  # do not record per-episode validity in the metadata
+    [--no-update-metadata]         # do not record per-episode validity in the metadata
+    [--qpos-jump-threshold RADIAN] # default 1.0
+    [--qpos-absmax RADIAN]         # default 6.28
+    [--min-duration SECOND]        # default 2.0
 ```
+
+Every episode is checked for `null` and `NaN` values. In addition,
+`--qpos-absmax` flags `qpos` values whose absolute value exceeds the
+threshold, `--qpos-jump-threshold` flags `qpos` frame-to-frame deltas above
+the threshold as abrupt jumps, and `--min-duration` flags episodes shorter
+than the given duration. The three thresholds are checked against the
+recorded values (smoothing is not applied) and each is disabled by passing
+`none`, e.g. `--min-duration none`. Files that include `null` or `NaN` are
+reported but not checked against the `qpos` thresholds.
 
 Exits with status `1` if any errors are reported. The result is also recorded
 per episode as a boolean `valid` flag in `metadata.yaml` unless

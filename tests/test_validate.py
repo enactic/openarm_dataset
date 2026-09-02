@@ -20,7 +20,18 @@ from pathlib import Path
 import pandas as pd
 from openarm_dataset.dataset import Dataset
 
-DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.3.0"
+DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_qpos"
+
+# The CLI enables the qpos and duration thresholds by default. Tests that
+# only exercise the null check turn them off.
+DISABLE_THRESHOLDS = [
+    "--qpos-jump-threshold",
+    "none",
+    "--qpos-absmax",
+    "none",
+    "--min-duration",
+    "none",
+]
 
 
 def _inject_null_qpos(state_path):
@@ -133,7 +144,13 @@ def test_validate_update_metadata(tmp_path):
 def test_validate_cli_valid(tmp_path):
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     result = subprocess.run(
-        [sys.executable, "-m", "openarm_dataset.validate", str(tmp_path)],
+        [
+            sys.executable,
+            "-m",
+            "openarm_dataset.validate",
+            str(tmp_path),
+            *DISABLE_THRESHOLDS,
+        ],
         capture_output=True,
         text=True,
     )
@@ -150,7 +167,13 @@ def test_validate_cli_invalid(tmp_path):
     _inject_null_qpos(state_path)
 
     result = subprocess.run(
-        [sys.executable, "-m", "openarm_dataset.validate", str(tmp_path)],
+        [
+            sys.executable,
+            "-m",
+            "openarm_dataset.validate",
+            str(tmp_path),
+            *DISABLE_THRESHOLDS,
+        ],
         capture_output=True,
         text=True,
     )
@@ -175,6 +198,7 @@ def test_validate_cli_no_update_metadata(tmp_path):
             "openarm_dataset.validate",
             str(tmp_path),
             "--no-update-metadata",
+            *DISABLE_THRESHOLDS,
         ],
         capture_output=True,
         text=True,
@@ -189,4 +213,80 @@ POSE_DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_pose"
 def test_validate_pose_dataset():
     errors = []
     assert Dataset(POSE_DATASET_DIR).validate(on_error=errors.append)
+    assert errors == []
+
+
+def _inject_large_qpos(path, column="qpos", value=100.0):
+    df = pd.read_parquet(path)
+    values = df[column].tolist()
+    first = list(values[0])
+    first[0] = value
+    values[0] = first
+    df[column] = values
+    df.to_parquet(path)
+
+
+def _inject_qpos_jump(path, column="qpos", jump=10.0):
+    """Move the last frame away from the previous one to create one jump."""
+    df = pd.read_parquet(path)
+    values = df[column].tolist()
+    last = list(values[-1])
+    last[0] = float(values[-2][0]) + jump
+    values[-1] = last
+    df[column] = values
+    df.to_parquet(path)
+
+
+def test_validate_detects_qpos_absmax(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
+    _inject_large_qpos(state_path)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append, qpos_absmax=6.28)
+    assert errors == [
+        "episodes/0/obs/arms/left/state.parquet: qpos absmax=100.0000 > 6.28"
+    ]
+
+
+def test_validate_detects_qpos_jump(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
+    _inject_qpos_jump(state_path)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(
+        on_error=errors.append, qpos_jump_threshold=1.0
+    )
+    assert errors == [
+        "episodes/0/obs/arms/left/state.parquet: 1 qpos jump(s) > 1.0 rad (max=10.0000)"
+    ]
+
+
+def test_validate_skips_qpos_checks_for_null_file(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
+    _inject_null_qpos(state_path)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(
+        on_error=errors.append, qpos_absmax=6.28, qpos_jump_threshold=1.0
+    )
+    assert errors == ["episodes/0/obs/arms/left/state.parquet: includes null values"]
+
+
+def test_validate_detects_short_episode():
+    errors = []
+    assert not Dataset(DATASET_DIR).validate(on_error=errors.append, min_duration=2.0)
+    assert errors == ["episodes/3: duration=0.81s < 2.0s"]
+
+
+def test_validate_accepts_clean_dataset():
+    errors = []
+    assert Dataset(DATASET_DIR).validate(
+        on_error=errors.append,
+        qpos_absmax=6.28,
+        qpos_jump_threshold=1.0,
+        min_duration=0.5,
+    )
     assert errors == []
