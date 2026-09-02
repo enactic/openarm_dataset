@@ -25,6 +25,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
+    # H.264 encoding/decoding of mp4-packed camera frames.
+    "av>=15.1.0",
     "huggingface_hub",
     "jinja2",
     "numpy",

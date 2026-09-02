@@ -116,7 +116,8 @@ def upload_dataset(
 
     Creates the dataset repository if it does not exist, then uploads the whole
     directory. Camera frames are never uploaded as loose image files; pack them
-    into ``.tar`` archives first (see ``Dataset.write(camera_format="tar")``).
+    into ``.tar`` archives or ``.mp4`` videos first (see
+    ``Dataset.write(camera_format=...)``).
 
     Args:
         input_path: Path of the OpenArm Dataset directory to upload.
@@ -127,7 +128,9 @@ def upload_dataset(
             on the dataset card.
         licence: Licence identifier recorded on the dataset card.
         camera_names: Camera names to expose as dataset viewer configs so the
-            camera frames are browsable on the Hugging Face Hub.
+            camera frames are browsable on the Hugging Face Hub. Only
+            ``.tar``-packed cameras can be browsed, so pass ``None`` for
+            ``.mp4``-packed datasets.
         private: Create the repository as private when it does not exist.
         upload_large_folder: Use ``upload_large_folder`` for a resumable,
             multi-threaded upload of large datasets.
@@ -141,7 +144,8 @@ def upload_dataset(
         exist_ok=True,
     )
     # Never upload camera frames as loose image files; they belong in .tar
-    # archives to stay within Hugging Face Hub's per-repository file-count limit.
+    # archives or .mp4 videos to stay within Hugging Face Hub's per-repository
+    # file-count limit.
     ignore_patterns = ["*.jpeg", "*.jpg", "*.png"]
     upload_kwargs = {
         "repo_id": repo_id,
@@ -212,13 +216,15 @@ def main():
 
     dataset = Dataset(args.input)
 
-    if dataset.camera_format == "dir":
+    camera_format = dataset.camera_format
+    if camera_format == "dir":
         print(
             "Packing camera frames into .tar archives in place before upload "
             "(Hugging Face Hub file-count recommendation)...",
             file=sys.stderr,
         )
         pack_cameras_as_tar(dataset)
+        camera_format = "tar"
 
     upload_dataset(
         args.input,
@@ -226,7 +232,8 @@ def main():
         tag=dataset.meta.version,
         metadata_yaml=(args.input / "metadata.yaml").read_text(),
         licence=args.licence,
-        camera_names=dataset.camera_names,
+        # The Hub dataset viewer can browse WebDataset (.tar) cameras only.
+        camera_names=dataset.camera_names if camera_format == "tar" else None,
         upload_large_folder=args.large_folder,
         private=args.private,
     )
