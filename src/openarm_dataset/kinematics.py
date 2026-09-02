@@ -35,6 +35,20 @@ import openarm_control
 
 SIDES = ("right", "left")
 
+# openarm_control's IK defaults are tuned for real-time teleoperation: each
+# solve moves the end effector by at most a bounded step, joint motion is
+# braked near singularities, and the redundant elbow is regulated toward the
+# home posture. Offline conversion instead needs every recorded pose solved
+# to convergence from the previous sample, so the default engines disable
+# that shaping and keep only the frame task, joint limits and damping.
+OFFLINE_IK_OVERRIDES = {
+    "frame_position_error_limit": 0.0,
+    "frame_orientation_error_limit": 0.0,
+    "singularity_max_approach_rate": 0.0,
+    "nullspace_cost": 0.0,
+    "kinetic_energy_cost": 0.0,
+}
+
 
 class SideKinematics:
     """FK/IK for one arm side on top of ``openarm_control.Kinematics``.
@@ -175,7 +189,8 @@ def create_engines(
         args: Namespace holding openarm_control's common and IK flags
             (``register_common_args`` + ``register_ik_args``). Defaults to
             the openarm_control defaults (bimanual, cell scene, home
-            keyframe).
+            keyframe) with the IK configured for offline conversion
+            (``OFFLINE_IK_OVERRIDES``). An explicit namespace is used as-is.
 
     """
     if args is None:
@@ -183,6 +198,7 @@ def create_engines(
         openarm_control.register_common_args(parser)
         openarm_control.register_ik_args(parser)
         args = parser.parse_args([])
+        vars(args).update(OFFLINE_IK_OVERRIDES)
     ik_params = openarm_control.ik_params_from_args(args)
     engines = {}
     for side in sides_for_mode(args.mode):

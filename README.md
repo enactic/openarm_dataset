@@ -82,9 +82,12 @@ derived from the pose:
 Recorded `pose` data must be end-effector poses in the MuJoCo model's world
 frame (the openarm_control Cartesian-teleop convention); the kinematics use
 the model at its home keyframe, and time-varying lifter elevation is not
-folded in. Pass `kinematics=` to `Dataset` to override the engines built
-with `openarm_dataset.kinematics.create_engines()` (e.g. for a different
-scene or IK tolerances).
+folded in. The IK runs with openarm_control's real-time teleoperation
+shaping (bounded per-solve motion, singularity braking, nullspace home
+regulation) disabled so that every recorded pose is solved to convergence.
+Pass `kinematics=` to `Dataset` to override the engines built with
+`openarm_dataset.kinematics.create_engines()` (e.g. for a different scene
+or IK tolerances).
 
 Camera:
 
