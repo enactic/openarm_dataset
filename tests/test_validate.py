@@ -249,6 +249,20 @@ def test_validate_detects_qpos_absmax(tmp_path):
     ]
 
 
+def test_validate_detects_qpos_jump(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"
+    _inject_qpos_jump(state_path)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(
+        on_error=errors.append, qpos_jump_threshold=1.0
+    )
+    assert errors == [
+        "episodes/0/obs/arms/left/state.parquet: 1 qpos jump(s) > 1.0 rad (max=10.0000)"
+    ]
+
+
 def test_validate_skips_qpos_checks_for_null_file(tmp_path):
     shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
     state_path = tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet"

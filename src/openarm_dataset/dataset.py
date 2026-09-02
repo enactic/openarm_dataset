@@ -152,9 +152,9 @@ class Dataset:
         self,
         on_error=None,
         update_metadata: bool = False,
-        qpos_jump_threshold: float = None,
-        qpos_absmax: float = None,
-        min_duration: float = None,
+        qpos_jump_threshold: float | None = None,
+        qpos_absmax: float | None = None,
+        min_duration: float | None = None,
     ) -> bool:
         """Validate this dataset.
 
