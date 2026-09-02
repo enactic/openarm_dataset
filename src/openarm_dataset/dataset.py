@@ -204,12 +204,12 @@ class Dataset:
 
     @property
     def camera_format(self) -> str:
-        """Return the camera format ("dir" or "tar") shared by all cameras.
+        """Return the camera format ("dir", "tar" or "mp4") shared by all cameras.
 
         Every camera in the dataset is expected to use the same format.
 
         Raises:
-            ValueError: If cameras use a mix of "dir" and "tar".
+            ValueError: If cameras use a mix of formats.
 
         """
         formats = set()

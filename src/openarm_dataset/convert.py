@@ -73,10 +73,11 @@ def main():
     parser.add_argument(
         "--camera-format",
         help="How to store camera frames when the output format is openarm: "
-        "'dir' (one JPEG file per frame, default) or 'tar' (one .tar archive "
-        "per camera, recommended for Hugging Face Hub file-count limits)",
+        "'dir' (one JPEG file per frame, default), 'tar' (one .tar archive "
+        "per camera, recommended for Hugging Face Hub file-count limits) or "
+        "'mp4' (one H.264 .mp4 video per camera; lossy but far smaller)",
         default="dir",
-        choices=["dir", "tar"],
+        choices=["dir", "tar", "mp4"],
     )
     parser.add_argument(
         "--state",
