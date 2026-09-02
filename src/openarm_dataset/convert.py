@@ -37,7 +37,13 @@ def main():
         "--format",
         help="Format of the output dataset (default: openarm)",
         default="openarm",
-        choices=["openarm", "lerobot_v2.1", "lerobot_v3.0", "gr00t"],
+        choices=[
+            "openarm",
+            "lerobot_v2.1",
+            "lerobot_v3.0",
+            "gr00t",
+            "robot_eval_logger",
+        ],
     )
     parser.add_argument(
         "--fps",
@@ -71,6 +77,13 @@ def main():
         default=False,
     )
     parser.add_argument(
+        "--gripper-component",
+        help="Which arm the single 'gripper' field refers to if the output "
+        "format is robot_eval_logger and the dataset records more than one "
+        "arm (e.g. right). Every arm's gripper is written in full as "
+        "'<component>_gripper' either way",
+    )
+    parser.add_argument(
         "--camera-format",
         help="How to store camera frames when the output format is openarm: "
         "'dir' (one JPEG file per frame, default) or 'tar' (one .tar archive "
@@ -97,6 +110,19 @@ def main():
         # Fall back to the writers' qpos default when --state is not given.
         if args.state is not None:
             write_kwargs["state"] = args.state
+    elif args.format == "robot_eval_logger":
+        # This writer always emits measured joint angles, because its
+        # metadata declares control_mode "joint_position"; --state would
+        # contradict that.
+        if args.state is not None:
+            parser.error(
+                "--state does not apply to the robot_eval_logger format: it "
+                "always writes joint positions, as its control_mode declares"
+            )
+        write_kwargs["fps"] = args.fps
+        write_kwargs["success_only"] = args.success_only
+        if args.gripper_component is not None:
+            write_kwargs["gripper_component"] = args.gripper_component
     else:
         if args.state is not None:
             parser.error(
