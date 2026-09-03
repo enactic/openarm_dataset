@@ -32,6 +32,7 @@ jobs:
           - lerobot-dataset-v2.1
           - lerobot-dataset-v3.0
           - rerun
+          - robot-eval-logger
     steps:
       - uses: actions/checkout@v7
       - name: Install uv
