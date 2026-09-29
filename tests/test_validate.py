@@ -290,3 +290,94 @@ def test_validate_accepts_clean_dataset():
         min_duration=0.5,
     )
     assert errors == []
+
+
+def _pose_action_path(root, episode="0", side="left"):
+    return root / "episodes" / episode / "action" / "arms" / side / "state.parquet"
+
+
+def _inject_pose_row(path, row, pose_values):
+    """Overwrite one row's 8-dim pose list ([x,y,z, qw,qx,qy,qz, gripper])."""
+    df = pd.read_parquet(path)
+    values = df["pose"].tolist()
+    values[row] = list(pose_values)
+    df["pose"] = values
+    df.to_parquet(path)
+
+
+def test_validate_detects_zero_norm_quaternion(tmp_path):
+    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    # Zero-norm quaternion (all finite): downstream _pose_to_rot6d divides by
+    # the norm and emits NaN for this row, so it must fail validation.
+    _inject_pose_row(_pose_action_path(tmp_path), 0, [0.1, 0.2, 0.3, 0, 0, 0, 0, 0.5])
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == [
+        "episodes/0/action/arms/left/state.parquet: 1 quaternion(s) with zero norm"
+    ]
+
+
+def test_validate_detects_non_finite_quaternion(tmp_path):
+    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    # inf in a quaternion component: the null/NaN pass uses pc.is_nan and does
+    # not flag inf, so without this check inf would pass and propagate as NaN.
+    _inject_pose_row(
+        _pose_action_path(tmp_path), 0, [0.1, 0.2, 0.3, math.inf, 0, 0, 0, 0.5]
+    )
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == [
+        "episodes/0/action/arms/left/state.parquet: "
+        "includes non-finite quaternion values"
+    ]
+
+
+def test_validate_pose_check_is_scoped_to_quaternion_components(tmp_path):
+    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    # Huge position and gripper, but a unit quaternion: the quaternion checks
+    # must pass. Confirms the norm/finite checks read indices 3:7 only.
+    _inject_pose_row(
+        _pose_action_path(tmp_path), 0, [1e6, 1e6, 1e6, 1.0, 0.0, 0.0, 0.0, 1e6]
+    )
+
+    errors = []
+    assert Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == []
+
+
+def test_validate_pose_check_skips_null_file(tmp_path):
+    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    # A null in the pose list is already reported by the null/NaN pass; the
+    # quaternion check must skip that file rather than double-report.
+    df = pd.read_parquet(_pose_action_path(tmp_path))
+    values = df["pose"].tolist()
+    values[0] = None
+    df["pose"] = values
+    df.to_parquet(_pose_action_path(tmp_path))
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == [
+        "episodes/0/action/arms/left/state.parquet: includes null values"
+    ]
+
+
+def test_validate_qpos_dataset_unaffected_by_pose_check():
+    # A qpos-only dataset has no pose attributes, so the quaternion check is
+    # a no-op and the existing qpos-only validation behavior is unchanged.
+    errors = []
+    assert Dataset(DATASET_DIR).validate(on_error=errors.append)
+    assert errors == []
+
+
+def test_validate_pose_update_metadata(tmp_path):
+    shutil.copytree(POSE_DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    _inject_pose_row(_pose_action_path(tmp_path), 0, [0.1, 0.2, 0.3, 0, 0, 0, 0, 0.5])
+
+    assert not Dataset(tmp_path).validate(update_metadata=True)
+    assert Dataset(tmp_path).meta.episodes == [
+        {"id": "0", "success": False, "task_index": 0, "valid": False},
+        {"id": "3", "success": True, "task_index": 0, "valid": True},
+    ]
