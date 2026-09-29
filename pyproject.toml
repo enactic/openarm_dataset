@@ -53,6 +53,11 @@ rerun = [
     # The API differs by version; the latest API requires 0.33+.
     "rerun-sdk >= 0.33",
 ]
+robot-eval-logger = [
+    # Trajectories are lz4-frame-compressed pickles, per that project's
+    # DATA_FORMAT.md.
+    "lz4",
+]
 
 [project.urls]
 Changelog = "https://github.com/enactic/openarm_dataset/releases"

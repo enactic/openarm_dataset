@@ -691,6 +691,10 @@ class Dataset:
             from .lerobot_v21 import to_gr00t
 
             return to_gr00t(self, output, **options)
+        elif format == "robot_eval_logger":
+            from .robot_eval_logger import to_robot_eval_logger
+
+            return to_robot_eval_logger(self, output, **options)
         elif format == "rrd":
             try:
                 from .rrd import to_rrd
