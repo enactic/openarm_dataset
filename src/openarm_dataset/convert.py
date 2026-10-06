@@ -53,7 +53,7 @@ def main():
     )
     parser.add_argument(
         "--smoothing-cutoff",
-        help="Cutoff frequency for smoothing (default: 1.0) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
+        help="Cutoff frequency for smoothing in Hz (default: 1.0; 0 disables smoothing) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
         type=float,
         default=1.0,
     )

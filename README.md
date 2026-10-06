@@ -223,7 +223,7 @@ openarm-dataset-convert <input> <output> \
     [--camera-format {dir,tar}] # default dir (openarm only); tar packs each \
                                 # camera into one .tar archive \
     [--fps INT]                # default 30 (lerobot/gr00t only) \
-    [--smoothing-cutoff FLOAT] # default 1.0 (lerobot/gr00t only) \
+    [--smoothing-cutoff FLOAT] # default 1.0, 0 disables (lerobot/gr00t only) \
     [--train-split FLOAT]      # default 0.8 (lerobot/gr00t only) \
     [--success-only]           # lerobot/gr00t only \
     [--valid-only]             # exclude episodes marked invalid \
