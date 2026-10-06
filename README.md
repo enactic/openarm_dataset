@@ -111,15 +111,22 @@ PosixPath('.../head/1772010251618790832.jpeg')
 ...     pass  # iterate over Frame objects
 ```
 
-A camera's frames may be stored either as individual timestamped JPEG files in a
-directory (`episodes/0/cameras/head/<timestamp>.jpeg`) or packed into a single
-uncompressed tar archive (`episodes/0/cameras/head.tar`). Packing keeps the file
+A camera's frames may be stored as individual timestamped JPEG files in a
+directory (`episodes/0/cameras/head/<timestamp>.jpeg`), packed into a single
+uncompressed tar archive (`episodes/0/cameras/head.tar`), or encoded into a
+single H.264 video (`episodes/0/cameras/head.mp4`). Packing keeps the file
 count low enough for [Hugging Face Hub's storage
-recommendations](https://huggingface.co/docs/hub/storage-limits#recommendations).
-Both layouts expose the same API shown above. For tar-backed cameras, `frame.path`
-is a synthetic `.../head.tar/<timestamp>.jpeg` path that locates the image inside
-the archive — it is not a real file, so use `frame.load()` or `frame.read_bytes()`
-to access the image data.
+recommendations](https://huggingface.co/docs/hub/storage-limits#recommendations);
+tar is lossless, while mp4 is lossy but typically 10–20× smaller. The mp4 is
+self-contained: the exact nanosecond timestamp of every frame is stored in the
+video's metadata (`openarm_timestamps`), and the frames are also timed so the
+video plays back at the recorded pace in any player.
+All layouts expose the same API shown above. For tar- and mp4-backed cameras,
+`frame.path` is a synthetic `.../head.tar/<timestamp>.jpeg` (or
+`.../head.mp4/<timestamp>.jpeg`) path that locates the image inside the
+archive — it is not a real file, so use `frame.load()` or `frame.open_image()`
+to access the image data. Reading mp4 frames in order reuses one decoder;
+random access seeks to the nearest keyframe (every 30 frames) first.
 
 Sampling:
 
@@ -152,7 +159,7 @@ The current on-disk format written by `Dataset.write()` (and by the
     action/arms/<side>/state.parquet # timestamp + qpos or pose
     obs/lifter/elevation.parquet     # timestamp + value (only if recorded)
     action/lifter/elevation.parquet  # timestamp + value (only if recorded)
-    cameras/<name>/<timestamp>.jpeg  # or cameras/<name>.tar
+    cameras/<name>/<timestamp>.jpeg  # or cameras/<name>.tar or cameras/<name>.mp4
 ```
 
 `state.parquet` is self-describing: its non-timestamp columns (each a list of
@@ -220,8 +227,9 @@ Convert a dataset:
 ```bash
 openarm-dataset-convert <input> <output> \
     [--format {openarm,lerobot_v2.1,lerobot_v3.0,gr00t}] \
-    [--camera-format {dir,tar}] # default dir (openarm only); tar packs each \
-                                # camera into one .tar archive \
+    [--camera-format {dir,tar,mp4}] # default dir (openarm only); tar packs each \
+                                # camera into one .tar archive, mp4 encodes it \
+                                # into one H.264 video (lossy) \
     [--fps INT]                # default 30 (lerobot/gr00t only) \
     [--smoothing-cutoff FLOAT] # default 1.0 (lerobot/gr00t only) \
     [--train-split FLOAT]      # default 0.8 (lerobot/gr00t only) \
@@ -263,7 +271,9 @@ directories of JPEG files are repacked **in place** into one `.tar` archive per
 camera before uploading, to stay within [Hugging Face Hub's file-count
 recommendations](https://huggingface.co/docs/hub/storage-limits#recommendations).
 Repacking is lossless and reversible (`openarm-dataset-convert --camera-format dir`
-restores the JPEG-directory layout).
+restores the JPEG-directory layout). Cameras already packed as `.tar` or `.mp4`
+are uploaded as they are; only `.tar` cameras are browsable in the Hub's dataset
+viewer.
 
 ## Development
 
