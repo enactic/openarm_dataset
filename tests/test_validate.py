@@ -359,9 +359,7 @@ def test_validate_pose_check_skips_null_file(tmp_path):
 
     errors = []
     assert not Dataset(tmp_path).validate(on_error=errors.append)
-    assert errors == [
-        "episodes/0/action/arms/left/state.parquet: includes null values"
-    ]
+    assert errors == ["episodes/0/action/arms/left/state.parquet: includes null values"]
 
 
 def test_validate_qpos_dataset_unaffected_by_pose_check():
