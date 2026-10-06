@@ -72,6 +72,15 @@ STATE_JOINTS = {
 }
 
 
+# Recorded arm joint velocity and torque, exported beside observation.state
+# (which stays position-only, so policy inputs are unchanged) as
+# attribute -> (feature, joint name suffix), e.g. "right_joint1.velocity".
+ARM_DYNAMICS = {
+    "qvel": ("observation.velocity", "velocity"),
+    "qtorque": ("observation.torque", "torque"),
+}
+
+
 def _attribute_joints(embodiment, attribute):
     return STATE_JOINTS.get(attribute, embodiment.joints)
 
@@ -108,7 +117,26 @@ def _collect_keys_and_joint_names(dataset: Dataset, state: str):
     return keys, joint_names
 
 
-def _collect_downsampled_data(
+def _collect_arm_dynamics_keys(dataset: Dataset):
+    """Return ``(sample key prefix, joint names)`` for each arm component.
+
+    The order follows the equipment declaration, like ``observation.state``.
+    """
+    arms = []
+    for name, embodiment in dataset.meta.equipment.embodiments.items():
+        if not isinstance(embodiment, OpenArm):
+            continue
+        for component in embodiment.components:
+            arms.append(
+                (
+                    f"{name}/{component}",
+                    [f"{component}_{joint}" for joint in embodiment.joints],
+                )
+            )
+    return arms
+
+
+def _collect_downsampled_records(
     dataset: Dataset,
     fps: int,
     obs_keys,
@@ -116,7 +144,18 @@ def _collect_downsampled_data(
     success_only=False,
     state=None,
     valid_only=False,
+    arm_dynamics=False,
 ):
+    """Sample every exported episode once.
+
+    Returns ``(records, dynamics)``. With ``arm_dynamics``, ``dynamics`` maps
+    each feature in ``ARM_DYNAMICS`` recorded by every arm of every exported
+    episode to one ``(frames, joints)`` float32 array per record, sampled on
+    the same timeline and with the same smoothing as ``observation.state``.
+    Otherwise it is empty.
+    """
+    arms = _collect_arm_dynamics_keys(dataset) if arm_dynamics else []
+    per_record = []
     records = []
     for episode_index, episode in enumerate(dataset.meta.episodes):
         if not episode["success"] and success_only:
@@ -146,7 +185,45 @@ def _collect_downsampled_data(
             sampled_cameras,
         )
         records.append(record)
-    return records
+        if arms:
+            per_record.append(
+                {
+                    feature: np.stack(
+                        [
+                            np.concatenate([s.obs[f"{key}/{kind}"] for key, _ in arms])
+                            for s in samples
+                        ]
+                    ).astype(np.float32)
+                    for kind, (feature, _) in ARM_DYNAMICS.items()
+                    if samples
+                    and all(f"{key}/{kind}" in samples[0].obs for key, _ in arms)
+                }
+            )
+    dynamics = {}
+    if arms and per_record:
+        for feature, _ in ARM_DYNAMICS.values():
+            if all(feature in arrays for arrays in per_record):
+                dynamics[feature] = [arrays[feature] for arrays in per_record]
+    return records, dynamics
+
+
+def _arm_dynamics_features(dataset: Dataset, dynamics, fps=None):
+    """Return the info.json feature specs for the exported arm dynamics."""
+    joints = [
+        joint for _, names in _collect_arm_dynamics_keys(dataset) for joint in names
+    ]
+    features = {}
+    for feature, suffix in ARM_DYNAMICS.values():
+        if feature not in dynamics:
+            continue
+        features[feature] = {
+            "dtype": "float32",
+            "names": [f"{joint}.{suffix}" for joint in joints],
+            "shape": [len(joints)],
+        }
+        if fps is not None:
+            features[feature]["fps"] = fps
+    return features
 
 
 def _build_remaps(dataset: Dataset, records):
@@ -298,6 +375,7 @@ def _calc_episode_stats(
     task_index,
     fps: int,
     cameras,
+    dynamics=None,
 ) -> dict:
     length = len(sampled_obs)
     actions = np.vstack(sampled_actions).astype(np.float32)
@@ -311,6 +389,8 @@ def _calc_episode_stats(
     }
     stats["stats"]["action"] = _describe_vector(actions)
     stats["stats"]["observation.state"] = _describe_vector(observations)
+    for feature, values in (dynamics or {}).items():
+        stats["stats"][feature] = _describe_vector(values)
     stats["stats"]["timestamp"] = _describe_scalar(timestamps)
     stats["stats"]["frame_index"] = _describe_scalar(np.arange(length, dtype=np.int64))
     stats["stats"]["episode_index"] = _describe_scalar(
@@ -327,11 +407,38 @@ def _calc_episode_stats(
     return stats
 
 
+def _record_dynamics(dynamics, record_index):
+    """Return ``{feature: (frames, joints) array}`` for one record."""
+    return {
+        feature: arrays[record_index] for feature, arrays in (dynamics or {}).items()
+    }
+
+
+def _frame_columns(sampled_obs, sampled_actions, dynamics):
+    """Return the vector columns of a data table, dynamics after the state."""
+    columns = {"action": sampled_actions, "observation.state": sampled_obs}
+    for feature, values in dynamics.items():
+        columns[feature] = list(values)
+    return columns
+
+
 def _write_parquet(
-    dataset, records, output_dir, fps, remap_episode_index, remap_task_index
+    dataset,
+    records,
+    output_dir,
+    fps,
+    remap_episode_index,
+    remap_task_index,
+    dynamics=None,
 ):
     gidx = 0
-    for episode_index, num_frames, sampled_obs, sampled_actions, _ in records:
+    for record_index, (
+        episode_index,
+        num_frames,
+        sampled_obs,
+        sampled_actions,
+        _,
+    ) in enumerate(records):
         lerobot_episode_index = remap_episode_index[episode_index]
         task_index = remap_task_index[
             int(dataset.meta.episodes[episode_index]["task_index"])
@@ -340,8 +447,11 @@ def _write_parquet(
         t_cam = np.arange(num_frames, dtype=np.float64) / float(fps)
         df = pd.DataFrame(
             {
-                "action": sampled_actions,
-                "observation.state": sampled_obs,
+                **_frame_columns(
+                    sampled_obs,
+                    sampled_actions,
+                    _record_dynamics(dynamics, record_index),
+                ),
                 "timestamp": t_cam.astype(np.float64),
                 "frame_index": np.arange(num_frames, dtype=np.int64),
                 "episode_index": np.full(
@@ -389,7 +499,9 @@ def _write_metadata(
     action_names,
     remap_episode_index,
     remap_task_index,
+    dynamics=None,
 ):
+    dynamics = dynamics or {}
     episodes_metadata = []
     episodes_stats = []
 
@@ -404,13 +516,13 @@ def _write_metadata(
     last_frame_index_all = []
 
     gidx = 0
-    for (
+    for record_index, (
         episode_index,
         num_frames,
         sampled_obs,
         sampled_actions,
         sampled_cameras,
-    ) in records:
+    ) in enumerate(records):
         lerobot_episode_index = remap_episode_index[episode_index]
         lerobot_task_index = remap_task_index[
             int(dataset.meta.episodes[episode_index]["task_index"])
@@ -453,6 +565,7 @@ def _write_metadata(
             lerobot_task_index,
             fps,
             sampled_cameras,
+            _record_dynamics(dynamics, record_index),
         )
         episodes_stats.append(stats)
         gidx += len(sampled_obs)
@@ -529,6 +642,10 @@ def _write_metadata(
     overall_stats = {
         "action": _describe_vector(all_actions),
         "observation.state": _describe_vector(all_observations),
+        **{
+            feature: _describe_vector(np.vstack(arrays))
+            for feature, arrays in dynamics.items()
+        },
         "timestamp": _describe_scalar(timestamp_all),
         "frame_index": _describe_scalar(frame_index_all),
         "episode_index": _describe_scalar(episode_index_all),
@@ -554,6 +671,7 @@ def _write_metadata(
             "names": obs_names,
             "shape": [len(obs_names)],
         },
+        **_arm_dynamics_features(dataset, dynamics),
         "timestamp": {"dtype": "float64", "shape": [1], "names": None},
         "frame_index": {"dtype": "int64", "shape": [1], "names": None},
         "episode_index": {"dtype": "int64", "shape": [1], "names": None},
@@ -677,11 +795,16 @@ def to_lerobotv21(
     success_only: bool = False,
     state: str = "qpos",
     valid_only: bool = False,
+    arm_dynamics: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory.
 
     The arm state is exported in the ``state`` representation ("qpos" by
     default), converted on the fly when the dataset recorded another one.
+    With ``arm_dynamics``, the recorded arm ``qvel`` and ``qtorque`` are
+    also exported as ``observation.velocity`` and ``observation.torque``,
+    each only when every exported episode recorded it. A
+    ``smoothing_cutoff`` of 0 or None disables smoothing.
     """
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
@@ -699,8 +822,8 @@ def to_lerobotv21(
     keys, names = _collect_keys_and_joint_names(dataset, state)
 
     # collect downsampled data for each episode
-    records = _collect_downsampled_data(
-        dataset, fps, keys, keys, success_only, state, valid_only
+    records, dynamics = _collect_downsampled_records(
+        dataset, fps, keys, keys, success_only, state, valid_only, arm_dynamics
     )
 
     if not records:
@@ -711,7 +834,13 @@ def to_lerobotv21(
 
     # save parquet files for each episode (output_dir/data)
     _write_parquet(
-        dataset, records, output_dir, fps, remap_episode_index, remap_task_index
+        dataset,
+        records,
+        output_dir,
+        fps,
+        remap_episode_index,
+        remap_task_index,
+        dynamics,
     )
     # save_videos for each episode (output_dir/videos)
     _write_videos(dataset, records, output_dir, fps, remap_episode_index)
@@ -726,6 +855,7 @@ def to_lerobotv21(
         names,
         remap_episode_index,
         remap_task_index,
+        dynamics,
     )
 
 
@@ -755,5 +885,7 @@ def to_gr00t(
         success_only=success_only,
         state=state,
         valid_only=valid_only,
+        # modality.json does not describe the arm dynamics yet.
+        arm_dynamics=False,
     )
     _write_modality_json(dataset, output_dir, state)

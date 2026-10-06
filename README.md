@@ -219,7 +219,7 @@ Convert a dataset:
 
 ```bash
 openarm-dataset-convert <input> <output> \
-    [--format {openarm,lerobot_v2.1,lerobot_v3.0,gr00t}] \
+    [--format {openarm,lerobot_v2.1,lerobot_v3.0,gr00t,robot_eval_logger}] \
     [--camera-format {dir,tar}] # default dir (openarm only); tar packs each \
                                 # camera into one .tar archive \
     [--fps INT]                # default 30 (lerobot/gr00t only) \
@@ -227,7 +227,8 @@ openarm-dataset-convert <input> <output> \
     [--train-split FLOAT]      # default 0.8 (lerobot/gr00t only) \
     [--success-only]           # lerobot/gr00t only \
     [--valid-only]             # exclude episodes marked invalid \
-    [--state {qpos,pose,rot6d}] # default qpos (lerobot/gr00t only)
+    [--state {qpos,pose,rot6d}] # default qpos (lerobot/gr00t only) \
+    [--arm-dynamics]           # lerobot only
 ```
 
 The `--fps`, `--smoothing-cutoff`, `--train-split`, `--success-only`, and
@@ -247,6 +248,26 @@ the dataset stores the other representation. Every arm stream is exported
 in this one representation, regardless of what was recorded.
 The converted values are only written to the LeRobot output; the OpenArm
 dataset itself always keeps the raw recorded data.
+
+`--smoothing-cutoff` is the low-pass cutoff in Hz applied to every robot
+stream before resampling; `0` disables smoothing.
+
+With `--arm-dynamics` (`arm_dynamics=True` in Python), the `lerobot_v2.1` and
+`lerobot_v3.0` outputs also contain the recorded arm joint velocity and
+torque:
+
+| Feature | Type | Content |
+|---|---|---|
+| `observation.state` | float32[N] | Arm state in the `--state` representation, followed by other embodiments such as `elevation.pos` |
+| `observation.velocity` | float32[16] | Recorded arm `qvel`, named `right_joint1.velocity` … `left_gripper.velocity` |
+| `observation.torque` | float32[16] | Recorded arm `qtorque`, named `right_joint1.torque` … `left_gripper.torque` |
+
+Velocity and torque are always joint-space, cover the arms only, and are
+sampled on the same timeline and with the same smoothing as
+`observation.state`. Each is exported only when every exported episode
+recorded it, so check `meta/info.json` before relying on them. Their
+statistics are included in `meta/stats.json` and the per-episode stats. The
+`gr00t` output does not include them yet.
 
 Upload a dataset to the Hugging Face Hub:
 

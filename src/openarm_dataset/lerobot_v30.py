@@ -28,7 +28,10 @@ from .lerobot_v21 import (
     ROBOT_TYPE,
     VIDEO_CODEC,
     VIDEO_PIX_FMT,
-    _collect_downsampled_data,
+    _arm_dynamics_features,
+    _collect_downsampled_records,
+    _frame_columns,
+    _record_dynamics,
     _collect_keys_and_joint_names,
     _build_remaps,
     _describe_images,
@@ -71,7 +74,13 @@ def _write_dfs_to_parquet(
 
 
 def _write_packed_parquet(
-    dataset, records, output_dir, fps, remap_episode_index, remap_task_index
+    dataset,
+    records,
+    output_dir,
+    fps,
+    remap_episode_index,
+    remap_task_index,
+    dynamics=None,
 ):
     """Write episode data into packed parquet files, splitting by size limit.
 
@@ -86,9 +95,13 @@ def _write_packed_parquet(
     pending_dfs: list[pd.DataFrame] = []
     episodes_data_meta: list[dict] = []
 
-    for episode_index, num_frames, sampled_obs, sampled_actions, _ in tqdm(
-        records, desc="Writing data parquet", unit="ep"
-    ):
+    for record_index, (
+        episode_index,
+        num_frames,
+        sampled_obs,
+        sampled_actions,
+        _,
+    ) in enumerate(tqdm(records, desc="Writing data parquet", unit="ep")):
         lerobot_episode_index = remap_episode_index[episode_index]
         task_index = remap_task_index[
             int(dataset.meta.episodes[episode_index]["task_index"])
@@ -97,8 +110,11 @@ def _write_packed_parquet(
         t_cam = np.arange(num_frames, dtype=np.float64) / float(fps)
         df = pd.DataFrame(
             {
-                "action": sampled_actions,
-                "observation.state": sampled_obs,
+                **_frame_columns(
+                    sampled_obs,
+                    sampled_actions,
+                    _record_dynamics(dynamics, record_index),
+                ),
                 "timestamp": t_cam.astype(np.float64),
                 "frame_index": np.arange(num_frames, dtype=np.int64),
                 "episode_index": np.full(
@@ -245,6 +261,7 @@ def _calc_episode_stats_numpy(
     task_index,
     fps,
     cameras,
+    dynamics=None,
 ):
     """Compute per-episode stats as numpy arrays for v3.0 episodes parquet."""
     length = len(sampled_obs)
@@ -254,7 +271,11 @@ def _calc_episode_stats_numpy(
 
     stats: dict[str, np.ndarray] = {}
 
-    for key, data in [("action", actions), ("observation.state", observations)]:
+    for key, data in [
+        ("action", actions),
+        ("observation.state", observations),
+        *(dynamics or {}).items(),
+    ]:
         desc = _describe_vector(data)
         for stat_name, value in desc.items():
             stats[f"{key}/{stat_name}"] = np.array(value)
@@ -376,6 +397,7 @@ def _write_episodes_and_stats(
     remap_task_index,
     episodes_data_meta,
     episodes_video_meta,
+    dynamics=None,
 ):
     """Write episodes parquet with metadata + stats, and aggregated stats.json."""
     all_episode_dicts: list[dict] = []
@@ -418,6 +440,7 @@ def _write_episodes_and_stats(
             lerobot_task_index,
             fps,
             sampled_cameras,
+            _record_dynamics(dynamics, idx),
         )
 
         for stat_key, stat_value in ep_stats.items():
@@ -473,6 +496,7 @@ def _write_info_json(
     action_names,
     total_frames,
     remap_task_index,
+    dynamics=None,
 ):
     """Write v3.0 info.json."""
     features = {
@@ -488,6 +512,7 @@ def _write_info_json(
             "shape": [len(obs_names)],
             "fps": fps,
         },
+        **_arm_dynamics_features(dataset, dynamics or {}, fps=fps),
         "timestamp": {"dtype": "float64", "shape": [1], "names": None, "fps": fps},
         "frame_index": {"dtype": "int64", "shape": [1], "names": None, "fps": fps},
         "episode_index": {"dtype": "int64", "shape": [1], "names": None, "fps": fps},
@@ -569,11 +594,13 @@ def to_lerobotv30(
     success_only: bool = False,
     state: str = "qpos",
     valid_only: bool = False,
+    arm_dynamics: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v3.0 format.
 
     The arm state is exported in the ``state`` representation ("qpos" by
     default), converted on the fly when the dataset recorded another one.
+    See ``to_lerobotv21`` for ``arm_dynamics`` and ``smoothing_cutoff``.
     """
     if not (0.0 <= train_split <= 1.0):
         raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
@@ -586,8 +613,8 @@ def to_lerobotv30(
     # Identical for obs and action: both export the same uniform state
     # representation.
     keys, names = _collect_keys_and_joint_names(dataset, state)
-    records = _collect_downsampled_data(
-        dataset, fps, keys, keys, success_only, state, valid_only
+    records, dynamics = _collect_downsampled_records(
+        dataset, fps, keys, keys, success_only, state, valid_only, arm_dynamics
     )
 
     if not records:
@@ -596,7 +623,13 @@ def to_lerobotv30(
     remap_episode_index, remap_task_index = _build_remaps(dataset, records)
 
     episodes_data_meta, total_frames = _write_packed_parquet(
-        dataset, records, output_dir, fps, remap_episode_index, remap_task_index
+        dataset,
+        records,
+        output_dir,
+        fps,
+        remap_episode_index,
+        remap_task_index,
+        dynamics,
     )
 
     episodes_video_meta = _write_packed_videos(
@@ -612,6 +645,7 @@ def to_lerobotv30(
         remap_task_index,
         episodes_data_meta,
         episodes_video_meta,
+        dynamics,
     )
     _write_tasks_parquet(dataset, remap_task_index, output_dir)
     _write_info_json(
@@ -624,4 +658,5 @@ def to_lerobotv30(
         names,
         total_frames,
         remap_task_index,
+        dynamics,
     )
