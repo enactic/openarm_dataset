@@ -70,6 +70,44 @@ def test_load_action(dataset):
     assert action["lifter/elevation"].shape == (90, 1)
 
 
+def test_load_obs_smoothing(dataset):
+    episode = dataset.meta.episodes[0]
+    raw = dataset.load_obs(episode)
+    dataset.set_smoothing(1.0)
+    smoothed = dataset.load_obs(episode)
+    assert not smoothed["arms/left/qvel"].equals(raw["arms/left/qvel"])
+    # 0 overrides the value set by set_smoothing().
+    for key, df in dataset.load_obs(episode, cutoff=0).items():
+        pd.testing.assert_frame_equal(df, raw[key])
+    dataset.set_smoothing(0)
+    for key, df in dataset.load_obs(episode).items():
+        pd.testing.assert_frame_equal(df, raw[key])
+
+
+def test_load_action_smoothing(dataset):
+    episode = dataset.meta.episodes[0]
+    raw = dataset.load_action(episode)
+    dataset.set_smoothing(1.0)
+    smoothed = dataset.load_action(episode)
+    assert not smoothed["arms/left/qpos"].equals(raw["arms/left/qpos"])
+    # 0 overrides the value set by set_smoothing().
+    for key, df in dataset.load_action(episode, cutoff=0).items():
+        pd.testing.assert_frame_equal(df, raw[key])
+    dataset.set_smoothing(0)
+    for key, df in dataset.load_action(episode).items():
+        pd.testing.assert_frame_equal(df, raw[key])
+
+
+def test_negative_cutoff(dataset):
+    episode = dataset.meta.episodes[0]
+    with pytest.raises(ValueError, match="cutoff must not be negative"):
+        dataset.set_smoothing(-1.0)
+    with pytest.raises(ValueError, match="cutoff must not be negative"):
+        dataset.load_obs(episode, cutoff=-1.0)
+    with pytest.raises(ValueError, match="cutoff must not be negative"):
+        dataset.load_action(episode, cutoff=-1.0)
+
+
 def test_cameras(dataset):
     assert set(dataset.camera_names) == {
         "ceiling",

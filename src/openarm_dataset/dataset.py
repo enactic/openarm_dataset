@@ -114,6 +114,12 @@ def _renormalize_orientation(df: pd.DataFrame, attribute: str) -> pd.DataFrame:
     return df
 
 
+def _validate_cutoff(cutoff: float | None) -> None:
+    """Raise ValueError if the given smoothing cutoff is negative."""
+    if cutoff is not None and cutoff < 0:
+        raise ValueError(f"cutoff must not be negative, got {cutoff}")
+
+
 class Dataset:
     """OpenArm Dataset."""
 
@@ -144,8 +150,15 @@ class Dataset:
         self._smoothing_cutoff = None
         self._kinematics = kinematics
 
-    def set_smoothing(self, cutoff: float):
-        """Set smoothing."""
+    def set_smoothing(self, cutoff: float | None):
+        """Set smoothing.
+
+        Args:
+            cutoff: Cutoff frequency for smoothing in Hz. If None or 0,
+                smoothing is disabled.
+
+        """
+        _validate_cutoff(cutoff)
         self._smoothing_cutoff = cutoff
 
     def validate(
@@ -242,7 +255,9 @@ class Dataset:
             episode: Episode to load.
             use_unixtime: If True, the DataFrame index is returned as Unix time
                 (float64) instead of datetime64[ns].
-            cutoff: If not None, smoothing is applied using this value.
+            cutoff: Cutoff frequency for smoothing in Hz. If None, the
+                value set by set_smoothing() is used. If 0, smoothing is
+                disabled.
             state: If not None, return arm states in this representation
                 ("qpos", "pose" or "rot6d"), converting the recorded data
                 on the fly (qpos to pose via FK, pose to qpos via IK) when
@@ -261,11 +276,12 @@ class Dataset:
             }
 
         """
+        _validate_cutoff(cutoff)
         return self._load_embodiment_values(
             "obs",
             episode,
             use_unixtime,
-            cutoff=cutoff or self._smoothing_cutoff,
+            cutoff=self._smoothing_cutoff if cutoff is None else cutoff,
             state=state,
         )
 
@@ -282,7 +298,9 @@ class Dataset:
             episode: Episode to load.
             use_unixtime: If True, the DataFrame index is returned as Unix time
                 (float64) instead of datetime64[ns].
-            cutoff: If not None, smoothing is applied using this value.
+            cutoff: Cutoff frequency for smoothing in Hz. If None, the
+                value set by set_smoothing() is used. If 0, smoothing is
+                disabled.
             state: If not None, return arm states in this representation
                 ("qpos", "pose" or "rot6d"), converting the recorded data
                 on the fly (qpos to pose via FK, pose to qpos via IK) when
@@ -301,11 +319,12 @@ class Dataset:
             }
 
         """
+        _validate_cutoff(cutoff)
         return self._load_embodiment_values(
             "action",
             episode,
             use_unixtime=use_unixtime,
-            cutoff=cutoff or self._smoothing_cutoff,
+            cutoff=self._smoothing_cutoff if cutoff is None else cutoff,
             state=state,
         )
 
@@ -510,7 +529,7 @@ class Dataset:
                 component,
                 use_unixtime=use_unixtime,
             )
-        if cutoff is not None:
+        if cutoff is not None and cutoff > 0:
             values = {
                 key: _renormalize_orientation(
                     self._apply_smoothing(df, cutoff=cutoff),
