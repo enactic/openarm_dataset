@@ -594,7 +594,7 @@ def to_lerobotv30(
     success_only: bool = False,
     state: str = "qpos",
     valid_only: bool = False,
-    arm_dynamics: bool = True,
+    arm_dynamics: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v3.0 format.
 
@@ -607,8 +607,7 @@ def to_lerobotv30(
     if fps <= 0:
         raise ValueError(f"fps must be a positive integer, got {fps}")
 
-    # 0 disables smoothing
-    dataset.set_smoothing(cutoff=smoothing_cutoff or None)
+    dataset.set_smoothing(cutoff=smoothing_cutoff)
     output_dir = Path(output_dir)
 
     # Identical for obs and action: both export the same uniform state

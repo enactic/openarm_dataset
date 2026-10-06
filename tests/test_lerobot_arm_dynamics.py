@@ -53,9 +53,9 @@ def _expected(dataset: Dataset, kind: str) -> np.ndarray:
 
 
 @pytest.mark.parametrize("format_", FORMATS)
-def test_velocity_and_torque_are_exported_by_default(tmp_path, format_):
+def test_velocity_and_torque_are_exported(tmp_path, format_):
     dataset = Dataset(DYNAMICS_DATASET)
-    dataset.write(tmp_path, format=format_, fps=FPS)
+    dataset.write(tmp_path, format=format_, fps=FPS, arm_dynamics=True)
 
     data = _read_data(tmp_path)
     features = _features(tmp_path)
@@ -87,7 +87,9 @@ def test_velocity_and_torque_are_exported_by_default(tmp_path, format_):
 
 
 def test_v21_episode_stats_include_dynamics(tmp_path):
-    Dataset(DYNAMICS_DATASET).write(tmp_path, format="lerobot_v2.1", fps=FPS)
+    Dataset(DYNAMICS_DATASET).write(
+        tmp_path, format="lerobot_v2.1", fps=FPS, arm_dynamics=True
+    )
 
     lines = (tmp_path / "meta/episodes_stats.jsonl").read_text().splitlines()
     data = _read_data(tmp_path)
@@ -102,7 +104,9 @@ def test_v21_episode_stats_include_dynamics(tmp_path):
 
 
 def test_v30_episode_stats_include_dynamics(tmp_path):
-    Dataset(DYNAMICS_DATASET).write(tmp_path, format="lerobot_v3.0", fps=FPS)
+    Dataset(DYNAMICS_DATASET).write(
+        tmp_path, format="lerobot_v3.0", fps=FPS, arm_dynamics=True
+    )
 
     episodes = pd.read_parquet(next((tmp_path / "meta/episodes").rglob("*.parquet")))
     data = _read_data(tmp_path)
@@ -116,17 +120,17 @@ def test_v30_episode_stats_include_dynamics(tmp_path):
 
 
 @pytest.mark.parametrize("format_", FORMATS)
-def test_arm_dynamics_can_be_disabled(tmp_path, format_):
-    Dataset(DYNAMICS_DATASET).write(
-        tmp_path, format=format_, fps=FPS, arm_dynamics=False
-    )
+def test_arm_dynamics_are_off_by_default(tmp_path, format_):
+    Dataset(DYNAMICS_DATASET).write(tmp_path, format=format_, fps=FPS)
 
     assert "observation.velocity" not in _read_data(tmp_path).columns
     assert "observation.torque" not in _features(tmp_path)
 
 
 def test_position_only_recordings_have_no_dynamics(tmp_path):
-    Dataset(POSITION_ONLY_DATASET).write(tmp_path, format="lerobot_v2.1", fps=FPS)
+    Dataset(POSITION_ONLY_DATASET).write(
+        tmp_path, format="lerobot_v2.1", fps=FPS, arm_dynamics=True
+    )
 
     features = _features(tmp_path)
     assert "observation.velocity" not in features
@@ -142,7 +146,7 @@ def test_gr00t_output_has_no_dynamics(tmp_path):
 @pytest.mark.parametrize("format_", FORMATS)
 def test_zero_smoothing_cutoff_disables_smoothing(tmp_path, format_):
     Dataset(DYNAMICS_DATASET).write(
-        tmp_path, format=format_, fps=FPS, smoothing_cutoff=0
+        tmp_path, format=format_, fps=FPS, smoothing_cutoff=0, arm_dynamics=True
     )
 
     raw = Dataset(DYNAMICS_DATASET)  # no smoothing set
@@ -152,7 +156,7 @@ def test_zero_smoothing_cutoff_disables_smoothing(tmp_path, format_):
     )
 
 
-def test_cli_no_arm_dynamics(tmp_path, monkeypatch):
+def test_cli_arm_dynamics(tmp_path, monkeypatch):
     from openarm_dataset import convert
 
     monkeypatch.setattr(
@@ -163,15 +167,17 @@ def test_cli_no_arm_dynamics(tmp_path, monkeypatch):
             str(tmp_path),
             "--format",
             "lerobot_v3.0",
-            "--no-arm-dynamics",
+            "--arm-dynamics",
         ],
     )
     convert.main()
-    assert "observation.velocity" not in _features(tmp_path)
+    features = _features(tmp_path)
+    assert "observation.velocity" in features
+    assert "observation.torque" in features
 
 
 @pytest.mark.parametrize("format_", ("openarm", "gr00t"))
-def test_cli_no_arm_dynamics_rejected_for_other_formats(tmp_path, monkeypatch, format_):
+def test_cli_arm_dynamics_rejected_for_other_formats(tmp_path, monkeypatch, format_):
     from openarm_dataset import convert
 
     monkeypatch.setattr(
@@ -182,7 +188,7 @@ def test_cli_no_arm_dynamics_rejected_for_other_formats(tmp_path, monkeypatch, f
             str(tmp_path / "out"),
             "--format",
             format_,
-            "--no-arm-dynamics",
+            "--arm-dynamics",
         ],
     )
     with pytest.raises(SystemExit):

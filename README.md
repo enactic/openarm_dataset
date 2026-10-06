@@ -228,7 +228,7 @@ openarm-dataset-convert <input> <output> \
     [--success-only]           # lerobot/gr00t only \
     [--valid-only]             # exclude episodes marked invalid \
     [--state {qpos,pose,rot6d}] # default qpos (lerobot/gr00t only) \
-    [--no-arm-dynamics]        # lerobot only
+    [--arm-dynamics]           # lerobot only
 ```
 
 The `--fps`, `--smoothing-cutoff`, `--train-split`, `--success-only`, and
@@ -252,8 +252,9 @@ dataset itself always keeps the raw recorded data.
 `--smoothing-cutoff` is the low-pass cutoff in Hz applied to every robot
 stream before resampling; `0` disables smoothing.
 
-The `lerobot_v2.1` and `lerobot_v3.0` outputs also contain the recorded arm
-joint velocity and torque, unless `--no-arm-dynamics` is given:
+With `--arm-dynamics` (`arm_dynamics=True` in Python), the `lerobot_v2.1` and
+`lerobot_v3.0` outputs also contain the recorded arm joint velocity and
+torque:
 
 | Feature | Type | Content |
 |---|---|---|

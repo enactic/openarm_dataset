@@ -136,21 +136,6 @@ def _collect_arm_dynamics_keys(dataset: Dataset):
     return arms
 
 
-def _collect_downsampled_data(
-    dataset: Dataset,
-    fps: int,
-    obs_keys,
-    action_keys,
-    success_only=False,
-    state=None,
-    valid_only=False,
-):
-    records, _ = _collect_downsampled_records(
-        dataset, fps, obs_keys, action_keys, success_only, state, valid_only
-    )
-    return records
-
-
 def _collect_downsampled_records(
     dataset: Dataset,
     fps: int,
@@ -810,7 +795,7 @@ def to_lerobotv21(
     success_only: bool = False,
     state: str = "qpos",
     valid_only: bool = False,
-    arm_dynamics: bool = True,
+    arm_dynamics: bool = False,
 ) -> None:
     """Convert the given dataset to LeRobot v2.1 format and save to the specified output directory.
 
@@ -827,8 +812,8 @@ def to_lerobotv21(
     if fps <= 0:
         raise ValueError(f"fps must be a positive integer, got {fps}")
 
-    # set smoothing cutoff (0 disables smoothing)
-    dataset.set_smoothing(cutoff=smoothing_cutoff or None)
+    # set smoothing cutoff
+    dataset.set_smoothing(cutoff=smoothing_cutoff)
     # Create the output directories
     output_dir = Path(output_dir)
 

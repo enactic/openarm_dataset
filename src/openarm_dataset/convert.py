@@ -122,20 +122,19 @@ def main():
         choices=["qpos", "pose", "rot6d"],
     )
     parser.add_argument(
-        "--no-arm-dynamics",
-        help="Do not export the recorded arm joint velocity and torque as "
+        "--arm-dynamics",
+        help="Also export the recorded arm joint velocity and torque as "
         "observation.velocity and observation.torque if the output format is "
-        "lerobot_v2.1 or lerobot_v3.0 (default: exported when every episode "
-        "recorded them)",
+        "lerobot_v2.1 or lerobot_v3.0; each is exported only when every "
+        "episode recorded it (default: not exported)",
         action="store_true",
-        default=None,
+        default=False,
     )
 
     args = parser.parse_args()
-    if args.format not in ("lerobot_v2.1", "lerobot_v3.0") and args.no_arm_dynamics:
+    if args.format not in ("lerobot_v2.1", "lerobot_v3.0") and args.arm_dynamics:
         parser.error(
-            "--no-arm-dynamics applies only to the lerobot_v2.1 and "
-            "lerobot_v3.0 formats"
+            "--arm-dynamics applies only to the lerobot_v2.1 and lerobot_v3.0 formats"
         )
     robot_eval_logger_only = {
         "gripper_component": "--gripper-component",
@@ -164,7 +163,7 @@ def main():
         if args.state is not None:
             write_kwargs["state"] = args.state
         if args.format != "gr00t":
-            write_kwargs["arm_dynamics"] = not args.no_arm_dynamics
+            write_kwargs["arm_dynamics"] = args.arm_dynamics
     elif args.format == "robot_eval_logger":
         # This writer always emits measured joint angles, because its
         # metadata declares control_mode "joint_position"; --state would
