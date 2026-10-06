@@ -80,6 +80,8 @@ class Validator:
         # against a threshold, and they are already reported.
         if not self._validate_qpos(episode, null_paths):
             valid = False
+        if not self._validate_pose_quaternion(episode, null_paths):
+            valid = False
         if not self._validate_duration(episode):
             valid = False
         return valid
@@ -145,6 +147,49 @@ class Validator:
                             f"(max={deltas.max():.4f})"
                         )
                         valid = False
+        return valid
+
+    def _validate_pose_quaternion(self, episode: Episode, skipped_paths: set) -> bool:
+        """Check recorded pose quaternions are finite and non-zero.
+
+        A pose is ``[x, y, z, qw, qx, qy, qz, gripper]``; the quaternion is the
+        four scalar-first components at indices 3:7. A zero-norm or non-finite
+        quaternion cannot represent a valid rotation and can produce NaN in
+        downstream pose conversions. Quaternion normalization policy is
+        outside the scope of this check. The position and gripper components
+        are not checked here.
+        """
+        valid = True
+        for type_name in ("obs", "action"):
+            for attribute in self._dataset.get_embodiment_attributes(
+                type_name, episode
+            ):
+                path = attribute["path"]
+                if attribute["name"] != "pose":
+                    continue
+                if path in skipped_paths or not path.exists():
+                    continue
+                # Read the recorded values, not the smoothed ones: smoothing
+                # is what would hide the anomalies we are looking for.
+                values = self._dataset.load_embodiment_value(attribute).to_numpy()
+                if len(values) == 0:
+                    continue
+                quat = values[:, 3:7]
+                if not np.all(np.isfinite(quat)):
+                    self._report_error(
+                        f"{self._relative_path(path)}: "
+                        "includes non-finite quaternion values"
+                    )
+                    valid = False
+                    continue
+                norms = np.linalg.norm(quat, axis=1)
+                zero_count = int(np.count_nonzero(norms == 0.0))
+                if zero_count > 0:
+                    self._report_error(
+                        f"{self._relative_path(path)}: {zero_count} "
+                        "quaternion(s) with zero norm"
+                    )
+                    valid = False
         return valid
 
     def _validate_duration(self, episode: Episode) -> bool:
