@@ -53,7 +53,7 @@ def main():
     )
     parser.add_argument(
         "--smoothing-cutoff",
-        help="Cutoff frequency for smoothing (default: 1.0) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
+        help="Cutoff frequency for smoothing in Hz (default: 1.0; 0 disables smoothing) if the output format is lerobot_v2.1, lerobot_v3.0 or gr00t",
         type=float,
         default=1.0,
     )
@@ -121,8 +121,22 @@ def main():
         "the other representation (default: qpos)",
         choices=["qpos", "pose", "rot6d"],
     )
+    parser.add_argument(
+        "--no-arm-dynamics",
+        help="Do not export the recorded arm joint velocity and torque as "
+        "observation.velocity and observation.torque if the output format is "
+        "lerobot_v2.1 or lerobot_v3.0 (default: exported when every episode "
+        "recorded them)",
+        action="store_true",
+        default=None,
+    )
 
     args = parser.parse_args()
+    if args.format not in ("lerobot_v2.1", "lerobot_v3.0") and args.no_arm_dynamics:
+        parser.error(
+            "--no-arm-dynamics applies only to the lerobot_v2.1 and "
+            "lerobot_v3.0 formats"
+        )
     robot_eval_logger_only = {
         "gripper_component": "--gripper-component",
         "eval_id": "--eval-id",
@@ -149,6 +163,8 @@ def main():
         # Fall back to the writers' qpos default when --state is not given.
         if args.state is not None:
             write_kwargs["state"] = args.state
+        if args.format != "gr00t":
+            write_kwargs["arm_dynamics"] = not args.no_arm_dynamics
     elif args.format == "robot_eval_logger":
         # This writer always emits measured joint angles, because its
         # metadata declares control_mode "joint_position"; --state would
