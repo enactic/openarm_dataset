@@ -168,6 +168,9 @@ class Dataset:
         qpos_jump_threshold: float | None = None,
         qpos_absmax: float | None = None,
         min_duration: float | None = None,
+        max_duration: float | None = None,
+        max_stream_desync: float | None = None,
+        max_sample_gap: float | None = None,
     ) -> bool:
         """Validate this dataset.
 
@@ -184,6 +187,14 @@ class Dataset:
                 exceeds this threshold (radians).
             min_duration: If set, flag episodes whose duration is shorter
                 than this value (seconds).
+            max_duration: If set, flag episodes whose duration is longer
+                than this value (seconds).
+            max_stream_desync: If set, flag episodes whose streams do not all
+                cover the same span of time, differing by more than this
+                value (seconds).
+            max_sample_gap: If set, flag streams that stop recording
+                mid-episode, leaving a gap between consecutive samples longer
+                than this value (seconds).
 
         Returns:
             ``True`` if the dataset is valid, ``False`` otherwise.
@@ -199,6 +210,9 @@ class Dataset:
             qpos_jump_threshold=qpos_jump_threshold,
             qpos_absmax=qpos_absmax,
             min_duration=min_duration,
+            max_duration=max_duration,
+            max_stream_desync=max_stream_desync,
+            max_sample_gap=max_sample_gap,
         )
         valid = validator.validate()
         return valid
