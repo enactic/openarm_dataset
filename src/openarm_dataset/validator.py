@@ -123,7 +123,7 @@ class Validator:
                 or self._max_stream_early_stop is not None
                 else []
             )
-            if not self._validate_stream_early_stop(episode, streams + cameras):
+            if not self._validate_stream_early_stop(streams + cameras):
                 valid = False
             if not self._validate_sample_gaps(streams + cameras):
                 valid = False
@@ -381,9 +381,7 @@ class Validator:
         return False
 
     def _validate_stream_early_stop(
-        self,
-        episode: Episode,
-        streams: list[tuple[str, Path, np.ndarray]],
+        self, streams: list[tuple[str, Path, np.ndarray]]
     ) -> bool:
         """Check that no stream quits well before the others end.
 
@@ -399,11 +397,11 @@ class Validator:
             return True
         end = max(timestamps[-1] for _, _, timestamps in streams)
         valid = True
-        for key, _, timestamps in streams:
+        for _, path, timestamps in streams:
             early = (end - timestamps[-1]) / 1e9
             if early > self._max_stream_early_stop:
                 self._report_error(
-                    f"episodes/{episode['id']}/{key}: stopped {early:.2f}s before "
+                    f"{self._relative_path(path)}: stopped {early:.2f}s before "
                     f"the end of the episode > {self._max_stream_early_stop}s"
                 )
                 valid = False

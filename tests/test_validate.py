@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 import pandas as pd
 import yaml
+from openarm_dataset.camera import Camera
 from openarm_dataset.dataset import Dataset
 
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_qpos"
@@ -621,6 +622,27 @@ def test_validate_detects_stream_stopping_early(tmp_path):
     assert errors
     assert all("stopped" in error and "/cameras/" in error for error in errors)
     assert Dataset(tmp_path).validate(max_stream_early_stop=10.0)
+
+
+def test_validate_reports_tar_camera_by_its_archive(tmp_path):
+    # Like every per-file error, a tar-backed camera is reported by the file
+    # that holds it, and the same way by both stream checks.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    cameras = tmp_path / "episodes" / "0" / "cameras"
+    last = sorted((cameras / "ceiling").iterdir())[-1]
+    late = int(last.stem) + 1_500_000_000
+    shutil.copy(last, cameras / "ceiling" / f"{late}.jpeg")
+    for camera in [path for path in cameras.iterdir() if path.is_dir()]:
+        Camera(camera.name, camera).write(camera.with_suffix(".tar"), "tar")
+        shutil.rmtree(camera)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(
+        on_error=errors.append, max_sample_gap=1.0, max_stream_early_stop=1.0
+    )
+    ceiling = "episodes/0/cameras/ceiling.tar: "
+    assert f"{ceiling}1.50s gap between samples > 1.0s" in errors
+    assert any(error.startswith(f"{ceiling}stopped ") for error in errors)
 
 
 def test_validate_detects_arm_stream_stopping_early(tmp_path):
