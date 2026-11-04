@@ -18,18 +18,26 @@ import subprocess
 import sys
 from pathlib import Path
 import pandas as pd
+import yaml
+from openarm_dataset.camera import Camera
 from openarm_dataset.dataset import Dataset
 
 DATASET_DIR = Path(__file__).parent / "fixture" / "dataset_0.4.0_qpos"
 
-# The CLI enables the qpos and duration thresholds by default. Tests that
-# only exercise the null check turn them off.
+# The CLI enables the qpos, duration and stream thresholds by default. Tests
+# that only exercise the null check turn them off.
 DISABLE_THRESHOLDS = [
     "--qpos-jump-threshold",
     "none",
     "--qpos-absmax",
     "none",
     "--min-duration",
+    "none",
+    "--max-stream-desync",
+    "none",
+    "--max-sample-gap",
+    "none",
+    "--max-stream-early-stop",
     "none",
 ]
 
@@ -40,6 +48,20 @@ def _inject_null_qpos(state_path):
     values[0] = None
     df["qpos"] = values
     df.to_parquet(state_path)
+
+
+def _truncate_stream(state_path, keep):
+    """Cut a stream short, as an arm that stops reporting mid-recording does."""
+    df = pd.read_parquet(state_path)
+    df.head(keep).to_parquet(state_path, index=False)
+
+
+def _drop_middle_samples(state_path, start, stop):
+    """Drop a run of samples, leaving the stream's span intact but holed."""
+    df = pd.read_parquet(state_path)
+    pd.concat([df.iloc[:start], df.iloc[stop:]], ignore_index=True).to_parquet(
+        state_path, index=False
+    )
 
 
 def _inject_null_inside_qpos_list(state_path):
@@ -281,6 +303,199 @@ def test_validate_detects_short_episode():
     assert errors == ["episodes/3: duration=0.81s < 2.0s"]
 
 
+def test_validate_detects_long_episode():
+    errors = []
+    assert not Dataset(DATASET_DIR).validate(on_error=errors.append, max_duration=0.5)
+    assert errors == [
+        "episodes/0: duration=2.98s > 0.5s",
+        "episodes/3: duration=0.81s > 0.5s",
+    ]
+
+
+def test_validate_max_duration_disabled_by_default():
+    errors = []
+    assert Dataset(DATASET_DIR).validate(on_error=errors.append, min_duration=0.5)
+    assert errors == []
+
+
+def test_validate_reports_both_duration_bounds():
+    errors = []
+    assert not Dataset(DATASET_DIR).validate(
+        on_error=errors.append, min_duration=0.9, max_duration=1.0
+    )
+    assert errors == [
+        "episodes/0: duration=2.98s > 1.0s",
+        "episodes/3: duration=0.81s < 0.9s",
+    ]
+
+
+def test_validate_detects_truncated_stream(tmp_path):
+    # Feedback that drops out mid-recording leaves one stream short while the
+    # rest run on. Every file is still complete and NaN-free, so only the
+    # comparison between streams can see it.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    _truncate_stream(
+        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet", 250
+    )
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append, max_stream_desync=1.0)
+    assert errors == [
+        "episodes/0: stream durations differ by 1.99s > 1.0s "
+        "(obs/arms/left/state.parquet=1.00s, obs/arms/right/state.parquet=2.98s)"
+    ]
+
+
+def test_validate_detects_mid_episode_gap(tmp_path):
+    # The other half of the same fault: feedback that comes back leaves the
+    # stream the right length overall, with a hole in the middle.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    _drop_middle_samples(
+        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet",
+        100,
+        600,
+    )
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append, max_sample_gap=1.0)
+    assert errors == [
+        "episodes/0/obs/arms/left/state.parquet: 2.01s gap between samples > 1.0s"
+    ]
+
+
+def test_validate_gap_survives_a_stream_that_stays_in_sync(tmp_path):
+    # Dropping samples from the middle doesn't move either end, so the desync
+    # check passes it — the gap check is what has to catch this one.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    _drop_middle_samples(
+        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet",
+        100,
+        600,
+    )
+
+    errors = []
+    assert Dataset(tmp_path).validate(on_error=errors.append, max_stream_desync=1.0)
+    assert errors == []
+
+
+def test_validate_stream_checks_disabled_by_default(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    _truncate_stream(
+        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet", 250
+    )
+
+    errors = []
+    assert Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == []
+
+
+def test_validate_stream_checks_accept_differing_sample_rates():
+    # obs runs at 250 Hz and action at ~31 Hz in the fixture, so their spans
+    # differ by one slow sample (0.03s). That is normal, not a desync - and the
+    # thresholds here are the CLI defaults, so this is what keeps them clear of
+    # the slowest stream a dataset legitimately holds.
+    errors = []
+    assert Dataset(DATASET_DIR).validate(
+        on_error=errors.append, max_stream_desync=0.2, max_sample_gap=0.2
+    )
+    assert errors == []
+
+
+def test_validate_cli_detects_truncated_stream(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    _truncate_stream(
+        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet", 250
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openarm_dataset.validate",
+            str(tmp_path),
+            "--min-duration",
+            "none",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "episodes/0: stream durations differ by 1.99s > 0.2s" in result.stderr
+
+    meta = yaml.safe_load((tmp_path / "metadata.yaml").read_text())
+    assert [(ep["id"], ep["valid"]) for ep in meta["episodes"]] == [
+        ("0", False),
+        ("3", True),
+    ]
+
+
+def test_validate_detects_episode_without_data(tmp_path):
+    # A camera-only episode has no parquet for the other checks to read, so
+    # without this check it passes as valid.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    shutil.rmtree(tmp_path / "episodes" / "0" / "obs")
+    shutil.rmtree(tmp_path / "episodes" / "0" / "action")
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == [
+        "episodes/0: no obs data",
+        "episodes/0: no action data",
+    ]
+
+
+def test_validate_detects_episode_without_action_data(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    shutil.rmtree(tmp_path / "episodes" / "0" / "action")
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == ["episodes/0: no action data"]
+
+
+def test_validate_accepts_undeclared_embodiment_without_data(tmp_path):
+    # `equipment.embodiments` declares a lifter that plenty of real datasets
+    # never record; that is not a missing-data error.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    for episode_id in ("0", "3"):
+        for type_name in ("obs", "action"):
+            shutil.rmtree(tmp_path / "episodes" / episode_id / type_name / "lifter")
+
+    errors = []
+    assert Dataset(tmp_path).validate(on_error=errors.append)
+    assert errors == []
+
+
+def test_validate_marks_episode_without_data_invalid(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    shutil.rmtree(tmp_path / "episodes" / "0" / "obs")
+    shutil.rmtree(tmp_path / "episodes" / "0" / "action")
+
+    assert not Dataset(tmp_path).validate(update_metadata=True)
+    meta = yaml.safe_load((tmp_path / "metadata.yaml").read_text())
+    assert [(ep["id"], ep["valid"]) for ep in meta["episodes"]] == [
+        ("0", False),
+        ("3", True),
+    ]
+
+
+def test_validate_cli_max_duration(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openarm_dataset.validate",
+            str(tmp_path),
+            "--max-duration",
+            "0.9",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "episodes/0: duration=2.98s > 0.9s" in result.stderr
+
+
 def test_validate_accepts_clean_dataset():
     errors = []
     assert Dataset(DATASET_DIR).validate(
@@ -379,3 +594,69 @@ def test_validate_pose_update_metadata(tmp_path):
         {"id": "0", "success": False, "task_index": 0, "valid": False},
         {"id": "3", "success": True, "task_index": 0, "valid": True},
     ]
+
+
+def test_validate_detects_camera_frame_gap(tmp_path):
+    # A camera that stops delivering frames leaves the arms' streams intact,
+    # so only the camera's own timestamps show it.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    camera = tmp_path / "episodes" / "0" / "cameras" / "ceiling"
+    last = sorted(camera.iterdir())[-1]
+    late = int(last.stem) + 1_500_000_000
+    shutil.copy(last, camera / f"{late}.jpeg")
+
+    errors = []
+    assert not Dataset(tmp_path).validate(on_error=errors.append, max_sample_gap=1.0)
+    assert errors == ["episodes/0/cameras/ceiling: 1.50s gap between samples > 1.0s"]
+
+
+def test_validate_detects_stream_stopping_early(tmp_path):
+    # The fixture's cameras all stop within 0.1s of starting while the arms
+    # run for about 3s, so every camera stops ~2.9s early.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(
+        on_error=errors.append, max_stream_early_stop=1.0
+    )
+    assert errors
+    assert all("stopped" in error and "/cameras/" in error for error in errors)
+    assert Dataset(tmp_path).validate(max_stream_early_stop=10.0)
+
+
+def test_validate_reports_tar_camera_by_its_archive(tmp_path):
+    # Like every per-file error, a tar-backed camera is reported by the file
+    # that holds it, and the same way by both stream checks.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    cameras = tmp_path / "episodes" / "0" / "cameras"
+    last = sorted((cameras / "ceiling").iterdir())[-1]
+    late = int(last.stem) + 1_500_000_000
+    shutil.copy(last, cameras / "ceiling" / f"{late}.jpeg")
+    for camera in [path for path in cameras.iterdir() if path.is_dir()]:
+        Camera(camera.name, camera).write(camera.with_suffix(".tar"), "tar")
+        shutil.rmtree(camera)
+
+    errors = []
+    assert not Dataset(tmp_path).validate(
+        on_error=errors.append, max_sample_gap=1.0, max_stream_early_stop=1.0
+    )
+    ceiling = "episodes/0/cameras/ceiling.tar: "
+    assert f"{ceiling}1.50s gap between samples > 1.0s" in errors
+    assert any(error.startswith(f"{ceiling}stopped ") for error in errors)
+
+
+def test_validate_detects_arm_stream_stopping_early(tmp_path):
+    # Not only cameras: an arm stream that ends early is held to the same bar.
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    _truncate_stream(
+        tmp_path / "episodes" / "0" / "obs" / "arms" / "left" / "state.parquet", 250
+    )
+
+    errors = []
+    assert not Dataset(tmp_path).validate(
+        on_error=errors.append, max_stream_early_stop=1.0
+    )
+    assert any(
+        error.startswith("episodes/0/obs/arms/left/state.parquet: stopped")
+        for error in errors
+    )

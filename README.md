@@ -172,16 +172,41 @@ openarm-dataset-validate <input> \
     [--qpos-jump-threshold RADIAN] # default 1.0
     [--qpos-absmax RADIAN]         # default 6.28
     [--min-duration SECOND]        # default 2.0
+    [--max-duration SECOND]        # default none (disabled)
+    [--max-stream-desync SECOND]   # default 0.2
+    [--max-sample-gap SECOND]      # default 0.2
+    [--max-stream-early-stop SECOND]  # default 1.0
 ```
 
-Every episode is checked for `null` and `NaN` values. In addition,
-`--qpos-absmax` flags `qpos` values whose absolute value exceeds the
-threshold, `--qpos-jump-threshold` flags `qpos` frame-to-frame deltas above
-the threshold as abrupt jumps, and `--min-duration` flags episodes shorter
-than the given duration. The three thresholds are checked against the
-recorded values (smoothing is not applied) and each is disabled by passing
-`none`, e.g. `--min-duration none`. Files that include `null` or `NaN` are
-reported but not checked against the `qpos` thresholds.
+Every episode is checked for `null` and `NaN` values, and for having any `obs`
+and `action` data at all: an episode whose parquet files are missing entirely
+(a camera-only recording, say) is reported as `no obs data` / `no action data`,
+since every other check would otherwise pass it silently. Presence is judged by
+what the episode recorded, not by `equipment.embodiments`, so an embodiment
+that is declared but never recorded is not an error.
+
+`--max-stream-desync` and `--max-sample-gap` catch an arm that stops reporting
+mid-recording. All of an episode's streams are recorded in one window, so
+`--max-stream-desync` flags an episode whose streams do not all cover the same
+span of time — feedback that dropped and never came back leaves `obs` ending
+while the cameras and `action` run on — and `--max-sample-gap` flags a stream
+that stops and resumes, which keeps the span intact but leaves a hole in the
+middle. Neither is visible file by file: each parquet is complete and free of
+`null`. The duration checks do not see it either, since they measure `obs` and
+so report a truncated stream as a short episode rather than a broken one.
+`--max-sample-gap` also covers each camera, whose frames can drop while the
+arms keep reporting; cameras are not held to `--max-stream-desync`, since they
+start and stop a little off the arms. `--max-stream-early-stop` is the loose
+check for any stream, arm or camera, that quits well before the latest one ends.
+
+In addition, `--qpos-absmax` flags `qpos` values whose absolute value exceeds
+the threshold, `--qpos-jump-threshold` flags `qpos` frame-to-frame deltas above
+the threshold as abrupt jumps, and `--min-duration` / `--max-duration` flag
+episodes shorter or longer than the given duration. The thresholds are checked
+against the recorded values (smoothing is not applied) and each is disabled by
+passing `none`, e.g. `--min-duration none`; `--max-duration` is disabled unless
+given. Files that include `null` or `NaN` are reported but not checked against
+the `qpos` thresholds.
 
 Exits with status `1` if any errors are reported. The result is also recorded
 per episode as a boolean `valid` flag in `metadata.yaml` unless
