@@ -107,8 +107,8 @@ class Validator:
             valid = False
         if not self._validate_duration(episode):
             valid = False
-        # Both checks read every stream's timestamps, so they share one read -
-        # and neither being asked for means not reading them at all.
+        # The stream checks share one read of the timestamps, skipped when
+        # none of them is enabled.
         if (
             self._max_stream_desync is not None
             or self._max_sample_gap is not None
@@ -302,7 +302,7 @@ class Validator:
 
         One entry per parquet file - a `state.parquet` carries several
         attributes on a single clock, so the file, not the attribute, is the
-        stream. Read once here because the two checks below both need it.
+        stream.
         """
         streams = []
         checked_paths = set()
@@ -339,7 +339,7 @@ class Validator:
         cameras = []
         for name in self._dataset.camera_names:
             camera = self._dataset.load_camera(name, episode)
-            # A camera with no frames is left to the presence check.
+            # A camera with no frames has no timestamps to check.
             if camera.num_frames == 0:
                 continue
             timestamps = np.rint(np.array(camera.load_timestamps()) * 1e9)
