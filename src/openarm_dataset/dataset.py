@@ -235,10 +235,13 @@ class Dataset:
         return list(self.meta.equipment.perceptions.cameras)
 
     @property
-    def camera_format(self) -> str:
+    def camera_format(self) -> str | None:
         """Return the camera format ("dir" or "tar") shared by all cameras.
 
         Every camera in the dataset is expected to use the same format.
+
+        Returns:
+            ``"dir"`` or ``"tar"``, or ``None`` if the dataset has no cameras.
 
         Raises:
             ValueError: If cameras use a mix of "dir" and "tar".
@@ -250,6 +253,8 @@ class Dataset:
                 formats.add(self.load_camera(name, episode).format)
         if len(formats) > 1:
             raise ValueError(f"Inconsistent camera formats: {sorted(formats)}")
+        if not formats:
+            return None
         return formats.pop()
 
     def _episode_id(self, index: int) -> str:
