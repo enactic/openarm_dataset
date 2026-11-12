@@ -14,9 +14,11 @@
 
 """End-to-end: write a dataset with tar-packed cameras and read it back."""
 
+import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from openarm_dataset.dataset import Dataset
 
@@ -102,3 +104,14 @@ def test_camera_format_inconsistent_raises(tmp_path):
     (out / "episodes" / "0" / "cameras" / "head").mkdir()
     with pytest.raises(ValueError, match="Inconsistent camera formats"):
         Dataset(out).camera_format
+
+
+def test_camera_format_no_cameras(tmp_path):
+    shutil.copytree(DATASET_DIR, tmp_path, dirs_exist_ok=True)
+    meta = yaml.safe_load((tmp_path / "metadata.yaml").read_text())
+    meta["equipment"]["perceptions"]["cameras"] = {}
+    meta["frequencies"]["cameras"] = {}
+    (tmp_path / "metadata.yaml").write_text(yaml.safe_dump(meta))
+    for cameras_dir in tmp_path.glob("episodes/*/cameras"):
+        shutil.rmtree(cameras_dir)
+    assert Dataset(tmp_path).camera_format is None
