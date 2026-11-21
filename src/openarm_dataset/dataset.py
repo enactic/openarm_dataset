@@ -695,11 +695,16 @@ class Dataset:
             return df
 
         nyquist = fps * 0.5
-        Wn = cutoff / nyquist
-        Wn = min(0.99, max(0.01, Wn))
-        b, a = signal.butter(4, Wn, btype="low")
+        if cutoff >= nyquist:
+            raise ValueError(
+                f"smoothing cutoff {cutoff} Hz must be below the Nyquist "
+                f"frequency {nyquist} Hz"
+            )
+        # Second-order sections stay accurate at the small normalized cutoffs
+        # that low cutoff frequencies give, so the cutoff is used as given.
+        sos = signal.butter(4, cutoff / nyquist, btype="low", output="sos")
 
-        filtered_values = signal.filtfilt(b, a, df.values, axis=0)
+        filtered_values = signal.sosfiltfilt(sos, df.values, axis=0)
         return pd.DataFrame(filtered_values, index=df.index, columns=df.columns)
 
     def _write(
